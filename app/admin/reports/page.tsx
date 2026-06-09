@@ -94,19 +94,19 @@ const ReportPDF = ({
           <View style={styles.tableHeader}>
             {type === 'items' ? (
               <>
-                <Text style={[styles.cell, { width: '10%' }]}>ลำดับ</Text>
-                <Text style={[styles.cell, { width: '20%' }]}>ชื่อสาขา</Text>
-                <Text style={[styles.cell, { width: '30%' }]}>รายการ</Text>
-                <Text style={[styles.cell, { width: '20%' }]}>จำนวน</Text>
-                <Text style={[styles.cell, { width: '10%' }]}>หน่วย</Text>
-
-                <Text style={[styles.cell, { width: '20%' }]}>ราคารวม (บาท)</Text>
+                <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}>ลำดับ</Text>
+                <Text style={[styles.cell, { width: '15%', textAlign: 'center' }]}>ชื่อสาขา</Text>
+                <Text style={[styles.cell, { width: '35%', textAlign: 'center' }]}>รายการ</Text>
+                <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}>จำนวน</Text>
+                <Text style={[styles.cell, { width: '15%', textAlign: 'center' }]}>หน่วย</Text>
+                <Text style={[styles.cell, { width: '15%', textAlign: 'center' }]}>ราคา(บาท)</Text>
               </>
             ) : (
               <>
-                <Text style={[styles.cell, { width: '40%' }]}>ชื่อสาขา</Text>
-                <Text style={[styles.cell, { width: '30%' }]}>จำนวนใบเบิก</Text>
-                <Text style={[styles.cell, { width: '30%' }]}>งบประมาณรวม (บาท)</Text>
+                <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}>ลำดับ</Text>
+                <Text style={[styles.cell, { width: '50%', textAlign: 'center' }]}>ชื่อสาขา</Text>
+                <Text style={[styles.cell, { width: '20%', textAlign: 'center' }]}>จำนวนใบเบิก</Text>
+                <Text style={[styles.cell, { width: '20%', textAlign: 'center' }]}>งบประมาณรวม (บาท)</Text>
               </>
             )}
           </View>
@@ -115,33 +115,32 @@ const ReportPDF = ({
             ? data.itemsList.map((item: any, index: number) => (
                 <View key={index} style={styles.row}>
                   <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}>{index + 1}</Text>
-                  <Text style={[styles.cell, { width: '20%' }]}>{item.branch_name}</Text>
-                  <Text style={[styles.cell, { width: '30%' }]}>{item.name}</Text>
-                  <Text style={[styles.cell, { width: '20%', textAlign: 'center' }]}>
-                    {item.totalQuantity}
-                  </Text>
-                  <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}></Text>
-                  <Text style={[styles.cell, { width: '20%', textAlign: 'right' }]}>
+                  <Text style={[styles.cell, { width: '15%' }]}>{item.branch_name}</Text>
+                  <Text style={[styles.cell, { width: '35%' }]}>{item.name}</Text>
+                  <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}>{item.totalQuantity}</Text>
+                  <Text style={[styles.cell, { width: '15%', textAlign: 'center' }]}> {item.unit} </Text>
+                  <Text style={[styles.cell, { width: '15%', textAlign: 'right' }]}>
                     {item.totalCost.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </Text>
                 </View>
               ))
             : data.branchSummaries.map((b: any, index: number) => (
                 <View key={index} style={styles.row}>
-                  <Text style={[styles.cell, { width: '40%' }]}>{b.branchName}</Text>
-                  <Text style={[styles.cell, { width: '30%', textAlign: 'center' }]}>{b.totalOrders}</Text>
-                  <Text style={[styles.cell, { width: '30%', textAlign: 'right' }]}>
+                  <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}>{index + 1}</Text>
+                  <Text style={[styles.cell, { width: '50%' }]}>{b.branchName}</Text>
+                  <Text style={[styles.cell, { width: '20%', textAlign: 'center' }]}>{b.totalOrders}</Text>
+                  <Text style={[styles.cell, { width: '20%', textAlign: 'right' }]}>
                     {b.totalBudget.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </Text>
                 </View>
               ))}
 
           <View style={styles.footerRow}>
-            <Text style={[styles.cell, { width: type === 'items' ? '80%' : '70%', textAlign: 'right', paddingRight: 10, fontWeight: 'bold' }]}>
+            <Text style={[styles.cell, { width: type === 'items' ? '85%' : '80%', textAlign: 'right', paddingRight: 10, fontWeight: 'bold' }]}>
               รวมยอดสุทธิทั้งสิ้น
             </Text>
-            <Text style={[styles.cell, { width: type === 'items' ? '20%' : '30%', fontWeight: 'bold', textAlign: 'right' }]}>
-              {data.totalBudget.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท
+            <Text style={[styles.cell, { width: type === 'items' ? '15%' : '20%', fontWeight: 'bold', textAlign: 'right' }]}>
+              {data.totalBudget.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
             </Text>
           </View>
         </View>
