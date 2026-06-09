@@ -121,7 +121,7 @@ export default function AdminRequisitionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
+    <div className="min-h-screen bg-linear-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
       <div className="max-w-6xl mx-auto space-y-5">
 
         {/* ── Navbar ── */}
@@ -183,7 +183,7 @@ export default function AdminRequisitionsPage() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="flex-1 h-10 px-4 border border-pink-100 rounded-xl bg-pink-50/50 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all placeholder:text-slate-400"
             />
-            <div className="flex items-center gap-1 bg-pink-50 p-1 rounded-xl border border-pink-100 flex-shrink-0">
+            <div className="flex items-center gap-1 bg-pink-50 p-1 rounded-xl border border-pink-100 shrink-0">
               {(['all', 'pending', 'approved', 'rejected'] as const).map((s) => (
                 <button
                   key={s}
@@ -214,7 +214,7 @@ export default function AdminRequisitionsPage() {
         ) : (
           Object.entries(groupedRequisitions).map(([date, reqs]) => (
             <div key={date} className="bg-white rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 overflow-hidden">
-              <div className="px-5 py-3 bg-gradient-to-r from-pink-50 to-rose-50/50 border-b border-pink-100 flex items-center gap-2">
+              <div className="px-5 py-3 bg-linear-to-r from-pink-50 to-rose-50/50 border-b border-pink-100 flex items-center gap-2">
                 <span className="text-pink-300">🗓️</span>
                 <span className="text-pink-500 font-black text-sm uppercase tracking-wider">{date}</span>
                 <span className="ml-auto text-xs font-bold text-pink-300">{reqs.length} รายการ</span>
@@ -238,7 +238,7 @@ export default function AdminRequisitionsPage() {
                           {req.status === 'pending' ? (
                             <button
                               onClick={() => handleViewDetails(req, 'review')}
-                              className="bg-gradient-to-r from-pink-500 to-rose-400 text-white hover:from-pink-600 hover:to-rose-500 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm shadow-pink-300/30 active:scale-95"
+                              className="bg-linear-to-r from-pink-500 to-rose-400 text-white hover:from-pink-600 hover:to-rose-500 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm shadow-pink-300/30 active:scale-95"
                             >
                               ตรวจสอบ →
                             </button>
@@ -266,7 +266,7 @@ export default function AdminRequisitionsPage() {
         <div className="fixed inset-0 bg-pink-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl shadow-pink-200/50 overflow-hidden border border-pink-100">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white p-5 flex items-start justify-between">
+            <div className="bg-linear-to-r from-pink-600 to-rose-500 text-white p-5 flex items-start justify-between">
               <div>
                 <h3 className="font-black text-base tracking-tight">
                   {modalMode === 'review' ? '📋 ตรวจสอบใบเบิก' : '📄 รายละเอียดใบเบิก'}
@@ -363,7 +363,7 @@ export default function AdminRequisitionsPage() {
                   </button>
                   <button
                     onClick={() => handleUpdateStatus(selectedReq.id, 'approved')}
-                    className="flex-1 bg-gradient-to-r from-pink-500 to-rose-400 text-white py-3 rounded-xl text-sm font-bold hover:from-pink-600 hover:to-rose-500 transition-all shadow-md shadow-pink-200 active:scale-95"
+                    className="flex-1 bg-linear-to-r from-pink-500 to-rose-400 text-white py-3 rounded-xl text-sm font-bold hover:from-pink-600 hover:to-rose-500 transition-all shadow-md shadow-pink-200 active:scale-95"
                   >
                     ✅ อนุมัติ
                   </button>

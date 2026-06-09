@@ -163,7 +163,7 @@ export default function AdminInventoryPage() {
     );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
+    <div className="min-h-screen bg-linear-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
       <div className="max-w-7xl mx-auto space-y-5">
 
         <nav className="bg-white border border-pink-100 rounded-2xl p-4 sm:p-5 shadow-sm shadow-pink-100/50 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -189,7 +189,7 @@ export default function AdminInventoryPage() {
             <h1 className="text-xl font-black text-slate-800 tracking-tight">📦 คลังสินค้า</h1>
             <p className="text-xs font-semibold text-pink-400 mt-1 uppercase tracking-widest">จัดการรายการสินค้าและสาขา</p>
           </div>
-          <div className="flex gap-2 flex-shrink-0">
+          <div className="flex gap-2 shrink-0">
           <p className="text-xs text-left font-semibold text-pink-400 mt-1 uppercase tracking-widest">ค้นหารายชื่อสินค้า <br />
             <input
               type="text"
@@ -209,7 +209,7 @@ export default function AdminInventoryPage() {
                 setEditingItem({ id: '', product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '' });
                 setFormData({ product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '' });
               }}
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-500 to-rose-400 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:from-pink-600 hover:to-rose-500 shadow-md shadow-pink-200/50 transition-all active:scale-95"
+              className="inline-flex items-center gap-2 bg-linear-to-r from-pink-500 to-rose-400 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:from-pink-600 hover:to-rose-500 shadow-md shadow-pink-200/50 transition-all active:scale-95"
             >
               + เพิ่มสินค้า
             </button>
@@ -356,7 +356,7 @@ export default function AdminInventoryPage() {
          </div>
         {selectedImage && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-pink-900/40 backdrop-blur-sm cursor-pointer"
+            className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-pink-900/40 backdrop-blur-sm cursor-pointer"
             onClick={() => setSelectedImage(null)}
           >
             <img src={selectedImage} alt="Preview" className="max-w-[90vw] max-h-[90vh] rounded-2xl shadow-2xl border-4 border-white" />
@@ -367,7 +367,7 @@ export default function AdminInventoryPage() {
           <div className="fixed inset-0 bg-pink-900/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl shadow-pink-200/50 border border-pink-100 space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center gap-3 pb-3 border-b border-pink-50">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white shadow-sm text-base">
+                <div className="w-9 h-9 rounded-xl bg-linear-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white shadow-sm text-base">
                   {editingItem.id ? '✏️' : '✨'}
                 </div>
                 <h3 className="font-black text-base text-slate-800">{editingItem.id ? 'แก้ไขข้อมูลสินค้า' : 'เพิ่มสินค้าใหม่'}</h3>
@@ -447,7 +447,7 @@ export default function AdminInventoryPage() {
               </div>
               <div className="flex gap-2 pt-1">
                 <button onClick={() => { setEditingItem(null); }} className="flex-1 py-3 bg-pink-50 text-pink-400 border border-pink-100 rounded-xl font-bold text-sm hover:bg-pink-100 transition-all">ยกเลิก</button>
-                <button onClick={handleSave} disabled={uploading} className="flex-1 py-3 bg-gradient-to-r from-pink-500 to-rose-400 text-white rounded-xl font-black text-sm hover:from-pink-600 hover:to-rose-500 shadow-md shadow-pink-200 transition-all disabled:opacity-60">บันทึกข้อมูล</button>
+                <button onClick={handleSave} disabled={uploading} className="flex-1 py-3 bg-linear-to-r from-pink-500 to-rose-400 text-white rounded-xl font-black text-sm hover:from-pink-600 hover:to-rose-500 shadow-md shadow-pink-200 transition-all disabled:opacity-60">บันทึกข้อมูล</button>
               </div>
             </div>
           </div>

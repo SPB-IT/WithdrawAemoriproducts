@@ -30,18 +30,24 @@ interface BranchSummary {
   itemDetails: ReportItemSummary[];
 }
 
-Font.register({ family: 'THSarabunNew', src: '/fonts/THSarabunNew.ttf' });
+Font.register({
+  family: 'THSarabunNew',
+  fonts: [
+    { src: '/fonts/THSarabunNew.ttf' }, // นี่คือตัวปกติ
+    { src: '/fonts/THSarabunNew-Bold.ttf', fontWeight: 'bold' } // นี่คือตัวหนา
+  ]
+});
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontFamily: 'THSarabunNew' },
   logo: { width: 80, height: 80, alignSelf: 'center', marginBottom: 10 },
   companyName: { fontSize: 20, textAlign: 'center', marginBottom: 5, fontWeight: 'bold' },
   address: { fontSize: 14, textAlign: 'center', marginBottom: 20 },
-  subHeader: { fontSize: 18, textAlign: 'center', marginBottom: 5, fontWeight: 'bold' },
+  subHeader: { fontSize: 18, textAlign: 'center', marginBottom: 5, fontWeight: 'bold', },
   subHeader2: { fontSize: 14, textAlign: 'center', marginBottom: 20 },
   dateTextLeft: { fontSize: 16, textAlign: 'left', marginBottom: 15, paddingLeft: 5 },
   table: { display: 'flex', flexDirection: 'column', width: '100%', borderTop: '1px solid #000', borderLeft: '1px solid #000', marginBottom: 20 },
-  tableHeader: { flexDirection: 'row', backgroundColor: '#F8BBD0' },
+  tableHeader: { flexDirection: 'row', backgroundColor: '#F8BBD0', fontWeight: 'bold' },
   row: { flexDirection: 'row' },
   cell: { padding: 5, fontSize: 14, borderRight: '1px solid #000', borderBottom: '1px solid #000' },
   footerRow: { flexDirection: 'row', backgroundColor: '#F48FB1' },
@@ -80,8 +86,6 @@ const ReportPDF = ({
     <Document>
       <Page size="A4" style={styles.page}>
         <PDFImage style={styles.logo} src="/logo.png" />
-        <Text style={styles.companyName}>บริษัท แอมโมริ เทรดดิ้งกรุ๊ป จำกัด</Text>
-        <Text style={styles.address}>499/95 หมู่ที่ 2 ตำบลชุมเห็ด อำเภอเมืองบุรีรัมย์ จ.บุรีรัมย์ 31000</Text>
         <Text style={styles.subHeader}>ใบเบิกวัสดุอุปกรณ์และสินค้า (Supply Use) ประจำวัน</Text>
         <Text style={styles.subHeader2}>สรุปรายละเอียดการใช้วัสดุสิ้นเปลืองและการเบิกจ่ายสินค้า (Aemori) รวมทั้งหมด</Text>
         <Text style={styles.dateTextLeft}>{dateLabel}</Text>
@@ -93,7 +97,9 @@ const ReportPDF = ({
                 <Text style={[styles.cell, { width: '10%' }]}>ลำดับ</Text>
                 <Text style={[styles.cell, { width: '20%' }]}>ชื่อสาขา</Text>
                 <Text style={[styles.cell, { width: '30%' }]}>รายการ</Text>
-                <Text style={[styles.cell, { width: '20%' }]}>จำนวนที่ได้รับ</Text>
+                <Text style={[styles.cell, { width: '20%' }]}>จำนวน</Text>
+                <Text style={[styles.cell, { width: '10%' }]}>หน่วย</Text>
+
                 <Text style={[styles.cell, { width: '20%' }]}>ราคารวม (บาท)</Text>
               </>
             ) : (
@@ -112,8 +118,9 @@ const ReportPDF = ({
                   <Text style={[styles.cell, { width: '20%' }]}>{item.branch_name}</Text>
                   <Text style={[styles.cell, { width: '30%' }]}>{item.name}</Text>
                   <Text style={[styles.cell, { width: '20%', textAlign: 'center' }]}>
-                    {item.totalQuantity} {item.unit}
+                    {item.totalQuantity}
                   </Text>
+                  <Text style={[styles.cell, { width: '10%', textAlign: 'center' }]}></Text>
                   <Text style={[styles.cell, { width: '20%', textAlign: 'right' }]}>
                     {item.totalCost.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                   </Text>
@@ -421,7 +428,7 @@ export default function AdminReportsPage() {
     );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800 print:bg-white print:py-0 print:px-0">
+    <div className="min-h-screen bg-linear-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800 print:bg-white print:py-0 print:px-0">
       <style jsx global>{`
         @media print {
           @page { size: A4 portrait; margin: 20mm; }
@@ -458,7 +465,7 @@ export default function AdminReportsPage() {
               <h1 className="text-xl font-black text-slate-800 tracking-tight">📈 สรุปยอดรายงาน</h1>
               <p className="text-xs font-semibold text-slate-400 mt-1">เลือกประเภทรายงาน ช่วงวันที่ และสาขา</p>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               {/* PDF */}
               <PDFDownloadLink
                 document={<ReportPDF data={currentData} title={getReportHeaderTitle()} type={selectedReportType} dateFrom={dateFrom} dateTo={dateTo} />}
@@ -602,7 +609,7 @@ export default function AdminReportsPage() {
                 <span className="text-sm font-bold text-slate-400">ฉบับ</span>
               </div>
             </div>
-            <div className="bg-gradient-to-br from-pink-50 to-rose-50/60 p-5 rounded-xl border border-pink-100 text-center">
+            <div className="bg-linear-to-br from-pink-50 to-rose-50/60 p-5 rounded-xl border border-pink-100 text-center">
               <span className="block text-xs font-black text-pink-400 uppercase tracking-widest">รวมงบที่ใช้เบิก</span>
               <div className="mt-2 flex items-baseline justify-center gap-1">
                 <span className="text-3xl font-black text-pink-600">{currentData.totalBudget.toLocaleString('th-TH')}</span>

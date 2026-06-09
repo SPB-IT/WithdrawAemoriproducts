@@ -98,7 +98,7 @@ const CartFormContent = ({
           cart.map((item) => (
             <div key={item.id} className="flex items-center justify-between bg-white p-2.5 border border-slate-100 rounded-xl shadow-sm hover:border-pink-100 transition-all">
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="w-10 h-10 bg-pink-50/40 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border border-pink-50">
+                <div className="w-10 h-10 bg-pink-50/40 rounded-xl shrink-0 flex items-center justify-center overflow-hidden border border-pink-50">
                   {item.image_url ? (
                     <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
                   ) : (
@@ -112,7 +112,7 @@ const CartFormContent = ({
               </div>
 
               {/* ±quantity */}
-              <div className="flex items-center bg-slate-50 border border-slate-200/60 rounded-lg p-0.5 mr-2 flex-shrink-0">
+              <div className="flex items-center bg-slate-50 border border-slate-200/60 rounded-lg p-0.5 mr-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => updateQuantity(item.id, -1)}
@@ -133,7 +133,7 @@ const CartFormContent = ({
               <button
                 type="button"
                 onClick={() => removeFromCart(item.id)}
-                className="text-slate-400 hover:text-rose-500 px-2 py-1.5 text-xs font-bold hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0"
+                className="text-slate-400 hover:text-rose-500 px-2 py-1.5 text-xs font-bold hover:bg-rose-50 rounded-lg transition-colors shrink-0"
               >
                 ลบ
               </button>
@@ -148,7 +148,7 @@ const CartFormContent = ({
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-gradient-to-r from-pink-500 to-rose-500 text-white py-4 rounded-xl font-bold hover:from-pink-600 hover:to-rose-600 disabled:from-slate-300 disabled:to-slate-400 shadow-md shadow-pink-500/20 active:scale-[0.99] transition-all text-sm tracking-wide flex items-center justify-center gap-2"
+        className="w-full bg-linear-to-r from-pink-500 to-rose-500 text-white py-4 rounded-xl font-bold hover:from-pink-600 hover:to-rose-600 disabled:from-slate-300 disabled:to-slate-400 shadow-md shadow-pink-500/20 active:scale-[0.99] transition-all text-sm tracking-wide flex items-center justify-center gap-2"
       >
         {loading ? (
           <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /><span>กำลังประมวลผล...</span></>
@@ -281,7 +281,7 @@ export default function RequisitionPage() {
               <p className="text-xs font-bold text-pink-400 mt-0.5 uppercase tracking-wider">ระบบจัดการคำขอเบิกวัสดุอุปกรณ์</p>
             </div>
           </div>
-          <div className="bg-pink-50/50 border border-pink-100/60 rounded-xl px-4 py-2.5 text-center flex-shrink-0">
+          <div className="bg-pink-50/50 border border-pink-100/60 rounded-xl px-4 py-2.5 text-center shrink-0">
             <span className="block text-xs font-black text-pink-400 uppercase tracking-widest">Document Type</span>
             <span className="text-sm font-black text-slate-700">ฟอร์มดิจิทัล (Requisition)</span>
           </div>
@@ -324,7 +324,7 @@ export default function RequisitionPage() {
                       }`}
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden shadow-inner relative">
+                        <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-xl shrink-0 flex items-center justify-center overflow-hidden shadow-inner relative">
                           {item.image_url ? (
                             <img src={item.image_url} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                           ) : (
@@ -347,7 +347,7 @@ export default function RequisitionPage() {
                       <button
                         type="button"
                         onClick={() => addToCart(item)}
-                        className={`px-4 py-2.5 rounded-xl font-bold text-sm active:scale-95 transition-all flex-shrink-0 shadow-sm border ${
+                        className={`px-4 py-2.5 rounded-xl font-bold text-sm active:scale-95 transition-all shrink-0 shadow-sm border ${
                           isClicked
                             ? 'bg-rose-500 border-rose-500 text-white'
                             : 'bg-pink-50 border-pink-100/40 text-pink-600 hover:bg-pink-500 hover:text-white hover:border-pink-500'
@@ -363,7 +363,7 @@ export default function RequisitionPage() {
           </div>
 
           {/* ── Right: Desktop cart ── */}
-          <div className="hidden lg:block lg:w-96 flex-shrink-0">
+          <div className="hidden lg:block lg:w-96 shrink-0">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:sticky lg:top-6">
               <h3 className="font-black text-base text-slate-800 border-b border-slate-100 pb-4 flex items-center gap-2 mb-5">
                 <span className="text-pink-500 text-lg">📋</span> สรุปใบเบิกสินค้า
@@ -400,7 +400,7 @@ export default function RequisitionPage() {
         <button
           type="button"
           onClick={() => setIsCartOpen(true)}
-          className="bg-gradient-to-r from-pink-500 to-rose-500 text-white px-5 py-3 rounded-xl text-sm font-bold shadow-md shadow-pink-500/20 active:scale-95 transition-all"
+          className="bg-linear-to-r from-pink-500 to-rose-500 text-white px-5 py-3 rounded-xl text-sm font-bold shadow-md shadow-pink-500/20 active:scale-95 transition-all"
         >
           ดูใบเบิก
         </button>
@@ -413,7 +413,7 @@ export default function RequisitionPage() {
       />
 
       {/* ── Mobile drawer ── */}
-      <div className={`lg:hidden fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white z-50 shadow-2xl flex flex-col transition-transform duration-300 ease-out ${isCartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`lg:hidden fixed inset-y-0 right-0 w-full sm:w-105 bg-white z-50 shadow-2xl flex flex-col transition-transform duration-300 ease-out ${isCartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="p-4 border-b border-pink-50 flex items-center justify-between bg-pink-50/20">
           <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
             <span className="text-pink-500">📋</span> สรุปใบเบิกสินค้า
@@ -443,7 +443,7 @@ export default function RequisitionPage() {
       {showConfirmModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="bg-gradient-to-r from-pink-600 to-rose-600 text-white p-5 flex items-center gap-3">
+            <div className="bg-linear-to-r from-pink-600 to-rose-600 text-white p-5 flex items-center gap-3">
               <span className="text-xl">📋</span>
               <div>
                 <h3 className="font-black text-base">ตรวจสอบรายละเอียดใบเบิก</h3>
@@ -471,7 +471,7 @@ export default function RequisitionPage() {
                   {cart.map((item) => (
                     <div key={item.id} className="p-3 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="w-9 h-9 bg-slate-50 rounded-lg overflow-hidden border border-slate-200/60 flex-shrink-0 flex items-center justify-center">
+                        <div className="w-9 h-9 bg-slate-50 rounded-lg overflow-hidden border border-slate-200/60 shrink-0 flex items-center justify-center">
                           {item.image_url ? (
                             <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
                           ) : (
@@ -480,7 +480,7 @@ export default function RequisitionPage() {
                         </div>
                         <span className="font-bold text-slate-700 truncate text-sm">{item.name}</span>
                       </div>
-                      <span className="font-black text-pink-600 bg-pink-50 border border-pink-100/50 px-3 py-1 rounded-lg text-sm ml-3 flex-shrink-0">
+                      <span className="font-black text-pink-600 bg-pink-50 border border-pink-100/50 px-3 py-1 rounded-lg text-sm ml-3 shrink-0">
                         {item.quantity} {item.unit}
                       </span>
                     </div>

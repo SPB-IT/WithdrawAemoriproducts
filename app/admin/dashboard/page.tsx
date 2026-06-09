@@ -101,7 +101,7 @@ export default function DashboardPage() {
     );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
+    <div className="min-h-screen bg-linear-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
       <div className="max-w-7xl mx-auto space-y-5">
 
         {/* ── Navbar ── */}
@@ -160,7 +160,7 @@ export default function DashboardPage() {
             </div>
 
             {/* ยอดรวม */}
-            <div className="flex items-center gap-2.5 bg-gradient-to-r from-pink-500 to-rose-400 px-4 py-2.5 rounded-xl shadow-md shadow-pink-300/30 ml-auto sm:ml-0">
+            <div className="flex items-center gap-2.5 bg-linear-to-r from-pink-500 to-rose-400 px-4 py-2.5 rounded-xl shadow-md shadow-pink-300/30 ml-auto sm:ml-0">
               <span className="text-pink-200 text-xs font-bold uppercase tracking-wider">งบรวมทั้งสิ้น</span>
               <span className="text-white font-black text-base">{totalBudget.toLocaleString()} ฿</span>
             </div>
@@ -178,16 +178,16 @@ export default function DashboardPage() {
               <table className="w-full text-sm border-separate" style={{ borderSpacing: 0 }}>
                 <thead>
                   <tr>
-                    <th className="p-4 border-b-2 border-r border-pink-100 text-left font-black text-pink-400 uppercase tracking-wider sticky left-0 bg-pink-50/80 z-20 shadow-[2px_0_8px_-2px_rgba(244,114,182,0.1)] min-w-[160px]">
+                    <th className="p-4 border-b-2 border-r border-pink-100 text-left font-black text-pink-400 uppercase tracking-wider sticky left-0 bg-pink-50/80 z-20 shadow-[2px_0_8px_-2px_rgba(244,114,182,0.1)] min-w-40">
                       🏬 สาขา
                     </th>
                     {displayedItems.map((item, i) => (
-                      <th key={i} className="p-4 border-b-2 border-r border-pink-100 min-w-[140px] text-center font-black text-pink-400 uppercase tracking-wide bg-pink-50/80">
+                      <th key={i} className="p-4 border-b-2 border-r border-pink-100 min-w-35 text-center font-black text-pink-400 uppercase tracking-wide bg-pink-50/80">
                         <span className="block">{item.name}</span>
                         <span className="text-xs text-pink-300 font-semibold normal-case tracking-normal">({item.unit})</span>
                       </th>
                     ))}
-                    <th className="p-4 border-b-2 border-pink-100 text-right font-black text-pink-400 uppercase tracking-wider min-w-[140px] bg-pink-50/80">
+                    <th className="p-4 border-b-2 border-pink-100 text-right font-black text-pink-400 uppercase tracking-wider min-w-35 bg-pink-50/80">
                       รวมสาขา
                     </th>
                   </tr>
@@ -207,7 +207,7 @@ export default function DashboardPage() {
                       {displayedItems.map((item, i) => {
                         const { qty, total } = getDetails(branch, item.name);
                         return (
-                          <td key={i} className="p-3 text-center border-r border-pink-50 min-w-[140px]">
+                          <td key={i} className="p-3 text-center border-r border-pink-50 min-w-35">
                             {qty > 0 ? (
                               <div className="inline-flex flex-col items-center gap-1">
                                 <span className="font-black text-pink-600 text-base leading-none">
@@ -223,7 +223,7 @@ export default function DashboardPage() {
                           </td>
                         );
                       })}
-                      <td className="p-4 font-black text-right text-slate-700 min-w-[140px]">
+                      <td className="p-4 font-black text-right text-slate-700 min-w-35">
                         {getBranchTotal(branch) > 0 ? (
                           <span className="text-pink-600 text-base">
                             {getBranchTotal(branch).toLocaleString()}{' '}
@@ -237,7 +237,7 @@ export default function DashboardPage() {
                   ))}
 
                   {/* Grand total row */}
-                  <tr className="bg-gradient-to-r from-pink-600 to-rose-500 text-white">
+                  <tr className="bg-linear-to-r from-pink-600 to-rose-500 text-white">
                     <td className="p-4 font-black text-base sticky left-0 bg-pink-600 z-10 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.15)]">
                       <div className="flex items-center gap-2">
                         <span className="text-pink-300">Σ</span> รวมทั้งหมด
@@ -246,7 +246,7 @@ export default function DashboardPage() {
                     {displayedItems.map((item, i) => {
                       const { qty, total } = getTotalByItem(item.name);
                       return (
-                        <td key={i} className="p-3 text-center border-r border-pink-500/50 min-w-[140px]">
+                        <td key={i} className="p-3 text-center border-r border-pink-500/50 min-w-35">
                           <div className="inline-flex flex-col items-center gap-0.5">
                             <span className="font-black text-white text-base leading-none">
                               {qty} <span className="text-xs font-semibold text-pink-200">{item.unit}</span>
@@ -256,7 +256,7 @@ export default function DashboardPage() {
                         </td>
                       );
                     })}
-                    <td className="p-4 font-black text-right text-white text-base min-w-[140px]">
+                    <td className="p-4 font-black text-right text-white text-base min-w-35">
                       {totalBudget.toLocaleString()} ฿
                     </td>
                   </tr>
