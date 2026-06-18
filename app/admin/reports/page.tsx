@@ -233,7 +233,7 @@ function PaginationBar({
               onClick={() => onGo(p as number)}
               className={`w-8 h-8 rounded-xl text-xs font-bold transition-all active:scale-95 ${
                 current === p
-                  ? 'bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-sm shadow-pink-300/30'
+                  ? 'bg-linear-to-r from-pink-500 to-rose-400 text-white shadow-sm shadow-pink-300/30'
                   : 'border border-pink-100 bg-pink-50 text-pink-400 hover:bg-pink-100'
               }`}
             >
