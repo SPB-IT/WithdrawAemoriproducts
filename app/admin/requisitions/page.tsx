@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
@@ -23,51 +23,99 @@ interface RequisitionDetail {
   } | null;
 }
 
-export default function AdminRequisitionsPage() {
-  const [requisitions, setRequisitions] = useState<Requisition[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedReq, setSelectedReq] = useState<Requisition | null>(null);
-  const [details, setDetails] = useState<RequisitionDetail[]>([]);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [modalMode, setModalMode] = useState<'review' | 'view'>('review');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+const PAGE_SIZE = 20;
 
-  async function fetchRequisitions() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('requisitions')
-      .select('id, created_at, branch_name, requester_name, status')
-      .order('created_at', { ascending: false });
-    if (data) setRequisitions(data);
-    if (error) console.error('Error fetching requisitions:', error);
-    setLoading(false);
+export default function AdminRequisitionsPage() {
+  const [requisitions, setRequisitions]     = useState<Requisition[]>([]);
+  const [loading, setLoading]               = useState(true);
+  const [selectedReq, setSelectedReq]       = useState<Requisition | null>(null);
+  const [details, setDetails]               = useState<RequisitionDetail[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [modalMode, setModalMode]           = useState<'review' | 'view'>('review');
+  const [filterStatus, setFilterStatus]     = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [searchTerm, setSearchTerm]         = useState('');
+
+  // Pagination state
+  const [currentPage, setCurrentPage]   = useState(1);
+  const [totalCount, setTotalCount]     = useState(0);
+
+  // Summary counts (independent of current page / filter)
+  const [pendingCount, setPendingCount]   = useState(0);
+  const [approvedCount, setApprovedCount] = useState(0);
+  const [rejectedCount, setRejectedCount] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // ── Fetch summary counts (always full table) ────────────────────────────
+  async function fetchCounts() {
+    const [p, a, r] = await Promise.all([
+      supabase.from('requisitions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('requisitions').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
+      supabase.from('requisitions').select('id', { count: 'exact', head: true }).eq('status', 'rejected'),
+    ]);
+    setPendingCount(p.count ?? 0);
+    setApprovedCount(a.count ?? 0);
+    setRejectedCount(r.count ?? 0);
   }
 
+  // ── Fetch one page of requisitions ─────────────────────────────────────
+  const fetchRequisitions = useCallback(async (page = currentPage) => {
+    setLoading(true);
+
+    const from = (page - 1) * PAGE_SIZE;
+    const to   = from + PAGE_SIZE - 1;
+
+    let query = supabase
+      .from('requisitions')
+      .select('id, created_at, branch_name, requester_name, status', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (filterStatus !== 'all') query = query.eq('status', filterStatus);
+
+    if (searchTerm.trim()) {
+      // Supabase ilike filter: match either column
+      query = query.or(
+        `branch_name.ilike.%${searchTerm.trim()}%,requester_name.ilike.%${searchTerm.trim()}%`,
+      );
+    }
+
+    const { data, count, error } = await query;
+    if (error) console.error('Error fetching requisitions:', error);
+    setRequisitions(data ?? []);
+    setTotalCount(count ?? 0);
+    setLoading(false);
+  }, [currentPage, filterStatus, searchTerm]);
+
+  // Re-fetch whenever page / filter / search changes
   useEffect(() => {
-    fetchRequisitions();
-  }, []);
+    fetchRequisitions(currentPage);
+  }, [currentPage, filterStatus, searchTerm]);
 
-  const filteredRequisitions = requisitions.filter((req) => {
-    const matchesStatus = filterStatus === 'all' || req.status === filterStatus;
-    const matchesSearch =
-      !searchTerm ||
-      req.branch_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      req.requester_name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+  // Fetch counts once on mount (and after status update)
+  useEffect(() => { fetchCounts(); }, []);
 
-  const groupedRequisitions = filteredRequisitions.reduce((groups, req) => {
+  // ── When filter or search changes, jump back to page 1 ─────────────────
+  const handleFilterChange = (s: typeof filterStatus) => {
+    setFilterStatus(s);
+    setCurrentPage(1);
+  };
+  const handleSearchChange = (v: string) => {
+    setSearchTerm(v);
+    setCurrentPage(1);
+  };
+
+  // ── Group current page's rows by date ───────────────────────────────────
+  const groupedRequisitions = requisitions.reduce((groups, req) => {
     const date = new Date(req.created_at).toLocaleDateString('th-TH', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
+      day: 'numeric', month: 'long', year: 'numeric',
     });
     if (!groups[date]) groups[date] = [];
     groups[date].push(req);
     return groups;
   }, {} as Record<string, Requisition[]>);
 
+  // ── Modal helpers ───────────────────────────────────────────────────────
   const handleViewDetails = async (req: Requisition, mode: 'review' | 'view') => {
     setSelectedReq(req);
     setModalMode(mode);
@@ -82,21 +130,40 @@ export default function AdminRequisitionsPage() {
   };
 
   const handleUpdateStatus = async (id: string, newStatus: 'pending' | 'approved' | 'rejected') => {
-    const label = newStatus === 'approved' ? 'อนุมัติ' : newStatus === 'rejected' ? 'ปฏิเสธ' : 'ยกเลิกการอนุมัติ';
+    const label =
+      newStatus === 'approved' ? 'อนุมัติ' :
+      newStatus === 'rejected' ? 'ปฏิเสธ' : 'ยกเลิกการอนุมัติ';
     if (!window.confirm(`ยืนยันการ "${label}" ใบเบิกนี้?`)) return;
     const { error } = await supabase.from('requisitions').update({ status: newStatus }).eq('id', id);
     if (error) {
       alert(`เกิดข้อผิดพลาด: ${error.message}`);
     } else {
       setSelectedReq(null);
-      fetchRequisitions();
+      await Promise.all([fetchRequisitions(currentPage), fetchCounts()]);
     }
   };
 
-  const pendingCount  = requisitions.filter((r) => r.status === 'pending').length;
-  const approvedCount = requisitions.filter((r) => r.status === 'approved').length;
-  const rejectedCount = requisitions.filter((r) => r.status === 'rejected').length;
+  // ── Pagination helpers ──────────────────────────────────────────────────
+  const goToPage = (p: number) => {
+    if (p < 1 || p > totalPages) return;
+    setCurrentPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
+  /** Build the visible page number buttons (at most 7 slots) */
+  function pageNumbers(): (number | '…')[] {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const pages: (number | '…')[] = [1];
+    if (currentPage > 3) pages.push('…');
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push('…');
+    pages.push(totalPages);
+    return pages;
+  }
+
+  // ── Status badge ────────────────────────────────────────────────────────
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'approved':
@@ -120,11 +187,12 @@ export default function AdminRequisitionsPage() {
     }
   };
 
+  // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-linear-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
       <div className="max-w-6xl mx-auto space-y-5">
 
-        {/* ── Navbar ── */}
+        {/* Navbar */}
         <nav className="bg-white border border-pink-100 rounded-2xl p-4 sm:p-5 shadow-sm shadow-pink-100/50 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center shadow-md shadow-pink-500/10 overflow-hidden border border-pink-200">
@@ -143,7 +211,7 @@ export default function AdminRequisitionsPage() {
           </div>
         </nav>
 
-        {/* ── Page Header ── */}
+        {/* Page Header */}
         <div className="bg-white p-5 rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -151,7 +219,7 @@ export default function AdminRequisitionsPage() {
               <p className="text-xs font-semibold text-pink-400 mt-1 uppercase tracking-widest">ตรวจสอบและอนุมัติ</p>
             </div>
             <button
-              onClick={fetchRequisitions}
+              onClick={() => fetchRequisitions(currentPage)}
               className="inline-flex items-center gap-2 bg-pink-50 text-pink-500 hover:bg-pink-100 border border-pink-100 px-4 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95"
             >
               🔄 รีเฟรช
@@ -180,14 +248,14 @@ export default function AdminRequisitionsPage() {
               type="text"
               placeholder="🔍 ค้นหาสาขาหรือชื่อผู้เบิก..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="flex-1 h-10 px-4 border border-pink-100 rounded-xl bg-pink-50/50 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all placeholder:text-slate-400"
             />
             <div className="flex items-center gap-1 bg-pink-50 p-1 rounded-xl border border-pink-100 shrink-0">
               {(['all', 'pending', 'approved', 'rejected'] as const).map((s) => (
                 <button
                   key={s}
-                  onClick={() => setFilterStatus(s)}
+                  onClick={() => handleFilterChange(s)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     filterStatus === s
                       ? 'bg-white text-pink-600 shadow-sm shadow-pink-100'
@@ -201,7 +269,7 @@ export default function AdminRequisitionsPage() {
           </div>
         </div>
 
-        {/* ── Requisition Tables ── */}
+        {/* Requisition Tables */}
         {loading ? (
           <div className="flex flex-col items-center gap-3 py-20 bg-white rounded-2xl border border-pink-100">
             <div className="w-10 h-10 rounded-full border-4 border-pink-200 border-t-pink-400 animate-spin" />
@@ -212,52 +280,102 @@ export default function AdminRequisitionsPage() {
             <p className="text-pink-300 font-bold text-base">ไม่พบใบเบิกในเงื่อนไขที่เลือก</p>
           </div>
         ) : (
-          Object.entries(groupedRequisitions).map(([date, reqs]) => (
-            <div key={date} className="bg-white rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 overflow-hidden">
-              <div className="px-5 py-3 bg-linear-to-r from-pink-50 to-rose-50/50 border-b border-pink-100 flex items-center gap-2">
-                <span className="text-pink-300">🗓️</span>
-                <span className="text-pink-500 font-black text-sm uppercase tracking-wider">{date}</span>
-                <span className="ml-auto text-xs font-bold text-pink-300">{reqs.length} รายการ</span>
+          <>
+            {Object.entries(groupedRequisitions).map(([date, reqs]) => (
+              <div key={date} className="bg-white rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 overflow-hidden">
+                <div className="px-5 py-3 bg-linear-to-r from-pink-50 to-rose-50/50 border-b border-pink-100 flex items-center gap-2">
+                  <span className="text-pink-300">🗓️</span>
+                  <span className="text-pink-500 font-black text-sm uppercase tracking-wider">{date}</span>
+                  <span className="ml-auto text-xs font-bold text-pink-300">{reqs.length} รายการ</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <tbody className="divide-y divide-pink-50/80">
+                      {reqs.map((req) => (
+                        <tr key={req.id} className="hover:bg-pink-50/40 transition-colors group">
+                          <td className="p-4 text-sm font-semibold text-slate-400 w-24">
+                            {new Date(req.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="p-4">
+                            <span className="font-black text-slate-800">{req.branch_name}</span>
+                          </td>
+                          <td className="p-4">
+                            <span className="text-sm font-semibold text-slate-500">{req.requester_name}</span>
+                          </td>
+                          <td className="p-4">{getStatusBadge(req.status)}</td>
+                          <td className="p-4 text-right">
+                            {req.status === 'pending' ? (
+                              <button
+                                onClick={() => handleViewDetails(req, 'review')}
+                                className="bg-linear-to-r from-pink-500 to-rose-400 text-white hover:from-pink-600 hover:to-rose-500 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm shadow-pink-300/30 active:scale-95"
+                              >
+                                ตรวจสอบ →
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleViewDetails(req, 'view')}
+                                className="bg-pink-50 text-pink-400 hover:bg-pink-100 border border-pink-100 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95"
+                              >
+                                {req.status === 'approved' ? '✅ รายละเอียด' : '❌ ดูข้อมูล'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <tbody className="divide-y divide-pink-50/80">
-                    {reqs.map((req) => (
-                      <tr key={req.id} className="hover:bg-pink-50/40 transition-colors group">
-                        <td className="p-4 text-sm font-semibold text-slate-400 w-24">
-                          {new Date(req.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                        <td className="p-4">
-                          <span className="font-black text-slate-800">{req.branch_name}</span>
-                        </td>
-                        <td className="p-4">
-                          <span className="text-sm font-semibold text-slate-500">{req.requester_name}</span>
-                        </td>
-                        <td className="p-4">{getStatusBadge(req.status)}</td>
-                        <td className="p-4 text-right">
-                          {req.status === 'pending' ? (
-                            <button
-                              onClick={() => handleViewDetails(req, 'review')}
-                              className="bg-linear-to-r from-pink-500 to-rose-400 text-white hover:from-pink-600 hover:to-rose-500 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm shadow-pink-300/30 active:scale-95"
-                            >
-                              ตรวจสอบ →
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleViewDetails(req, 'view')}
-                              className="bg-pink-50 text-pink-400 hover:bg-pink-100 border border-pink-100 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95"
-                            >
-                              {req.status === 'approved' ? '✅ รายละเอียด' : '❌ ดูข้อมูล'}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            ))}
+
+            {/* ── Pagination Bar ── */}
+            <div className="bg-white border border-pink-100 rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm shadow-pink-100/50">
+              {/* Info text */}
+              <p className="text-xs font-semibold text-slate-400 shrink-0">
+                แสดง {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, totalCount)} จาก {totalCount.toLocaleString('th-TH')} รายการ
+              </p>
+
+              {/* Buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                {/* Prev */}
+                <button
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-2 rounded-xl text-xs font-bold border border-pink-100 bg-pink-50 text-pink-400 hover:bg-pink-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+                >
+                  ← ก่อนหน้า
+                </button>
+
+                {/* Page numbers */}
+                {pageNumbers().map((p, idx) =>
+                  p === '…' ? (
+                    <span key={`ellipsis-${idx}`} className="px-2 text-slate-300 text-sm select-none">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => goToPage(p as number)}
+                      className={`w-9 h-9 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                        currentPage === p
+                          ? 'bg-linear-to-r from-pink-500 to-rose-400 text-white shadow-sm shadow-pink-300/30'
+                          : 'border border-pink-100 bg-pink-50 text-pink-400 hover:bg-pink-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+
+                {/* Next */}
+                <button
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-2 rounded-xl text-xs font-bold border border-pink-100 bg-pink-50 text-pink-400 hover:bg-pink-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+                >
+                  ถัดไป →
+                </button>
               </div>
             </div>
-          ))
+          </>
         )}
       </div>
 
@@ -265,7 +383,6 @@ export default function AdminRequisitionsPage() {
       {selectedReq && (
         <div className="fixed inset-0 bg-pink-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl shadow-pink-200/50 overflow-hidden border border-pink-100">
-            {/* Modal Header */}
             <div className="bg-linear-to-r from-pink-600 to-rose-500 text-white p-5 flex items-start justify-between">
               <div>
                 <h3 className="font-black text-base tracking-tight">
@@ -283,7 +400,6 @@ export default function AdminRequisitionsPage() {
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-5 max-h-[60vh] overflow-y-auto">
               {loadingDetails ? (
                 <div className="flex justify-center py-10">
@@ -291,7 +407,6 @@ export default function AdminRequisitionsPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Info grid */}
                   <div className="grid grid-cols-2 gap-2 bg-pink-50 p-4 rounded-xl border border-pink-100 text-sm">
                     <div>
                       <p className="text-xs font-bold text-pink-400 uppercase tracking-wider">ผู้เบิก</p>
@@ -313,7 +428,6 @@ export default function AdminRequisitionsPage() {
                     </div>
                   </div>
 
-                  {/* Items table */}
                   <table className="w-full text-left text-sm border-collapse">
                     <thead>
                       <tr className="border-b-2 border-pink-100 text-pink-400">
@@ -351,7 +465,6 @@ export default function AdminRequisitionsPage() {
               )}
             </div>
 
-            {/* Modal Footer */}
             <div className="p-4 bg-pink-50/40 border-t border-pink-100 flex gap-2">
               {modalMode === 'review' ? (
                 <>
