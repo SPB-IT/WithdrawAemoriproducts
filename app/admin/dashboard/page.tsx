@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import AdminNav from '../components/AdminNav';
 import Link from 'next/link';
 
 export default function DashboardPage() {
@@ -11,6 +12,9 @@ export default function DashboardPage() {
   const [allBranches, setAllBranches] = useState<string[]>([]);
   const [allItems, setAllItems] = useState<{ name: string; unit: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingLatest, setPendingLatest] = useState<{ id: string; branch_name: string; requester_name: string; created_at: string }[]>([]);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -26,6 +30,7 @@ export default function DashboardPage() {
           requisitions (branch_name, created_at, status),
           items (name, unit)
         `);
+      const { data: pendingData, count: pendingCount } = await supabase.from('requisitions').select('id, branch_name, requester_name, created_at', { count: 'exact' }).eq('status', 'pending').order('created_at', { ascending: false }).limit(5);
 
       if (branchesData) setAllBranches(branchesData.map((b) => b.name));
       if (itemsData) {
@@ -45,6 +50,9 @@ export default function DashboardPage() {
           )
         );
       }
+      setPendingLatest(pendingData ?? []);
+      setPendingTotal(pendingCount ?? 0);
+      setLastUpdated(new Date());
       setLoading(false);
     }
     fetchData();
@@ -85,6 +93,15 @@ export default function DashboardPage() {
     (sum: number, d: any) => sum + (d.quantity || 0) * (d.price_at_time || 0),
     0
   );
+  const totalQuantity = filteredData.reduce((sum: number, row: any) => sum + (row.quantity || 0), 0);
+  const activeBranchCount = new Set(filteredData.map((row) => row.requisitions.branch_name)).size;
+  const dailyTotals = Array.from({ length: 7 }, (_, offset) => {
+    const day = new Date();
+    day.setDate(day.getDate() - (6 - offset));
+    const key = day.toISOString().slice(0, 10);
+    return { key, label: day.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }), total: data.filter((row) => row.requisitions.created_at?.startsWith(key)).reduce((sum: number, row: any) => sum + (row.quantity || 0) * (row.price_at_time || 0), 0) };
+  });
+  const maxDailyTotal = Math.max(1, ...dailyTotals.map((day) => day.total));
 
   const displayedItems = selectedItem
     ? allItems.filter((i) => i.name === selectedItem)
@@ -105,25 +122,7 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto space-y-5">
 
         {/* ── Navbar ── */}
-        <nav className="bg-white border border-pink-100 rounded-2xl p-4 sm:p-5 shadow-sm shadow-pink-100/50 flex flex-col sm:flex-row items-center justify-between gap-4 relative overflow-hidden">
-          <div className="absolute -top-6 -right-6 w-28 h-28 bg-pink-200/20 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute -bottom-4 left-16 w-20 h-20 bg-rose-200/20 rounded-full blur-2xl pointer-events-none" />
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center shadow-md shadow-pink-500/10 overflow-hidden border border-pink-200">
-              <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
-            </div>
-            <div>
-              <p className="text-xl font-black tracking-tight text-slate-800 leading-tight">Aemori</p>
-              <p className="text-xs font-bold text-pink-400 mt-0.5 uppercase tracking-widest">ระบบจัดการเบิกของ Aemori</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-xs font-bold bg-pink-50 p-1 rounded-xl border border-pink-100/80">
-            <Link href="/admin/dashboard" className="bg-white text-pink-600 shadow-sm shadow-pink-100 px-4 py-2 rounded-lg transition-all">📊 แดชบอร์ด</Link>
-            <Link href="/admin/requisitions" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📝 ใบเบิก</Link>
-            <Link href="/admin/reports" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📈 รายงาน</Link>
-            <Link href="/admin/inventory" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📦 คลัง</Link>
-          </div>
-        </nav>
+        <AdminNav />
 
         {/* ── Header + Filters ── */}
         <div className="bg-white p-5 rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -165,6 +164,22 @@ export default function DashboardPage() {
               <span className="text-white font-black text-base">{totalBudget.toLocaleString()} ฿</span>
             </div>
           </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Link href="/admin/requisitions" className="rounded-2xl border border-amber-100 bg-amber-50 p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"><p className="text-xs font-black text-amber-700">ใบเบิกรอดำเนินการ</p><p className="mt-2 text-3xl font-black text-slate-800">{pendingTotal}</p><p className="mt-1 text-xs font-semibold text-amber-600">เปิดหน้าตรวจสอบ →</p></Link>
+          <Link href="/admin/reports" className="rounded-2xl border border-pink-100 bg-pink-50 p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"><p className="text-xs font-black text-pink-700">จำนวนที่อนุมัติเดือนนี้</p><p className="mt-2 text-3xl font-black text-slate-800">{totalQuantity.toLocaleString('th-TH')}</p><p className="mt-1 text-xs font-semibold text-pink-600">ดูรายงานสินค้า →</p></Link>
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5"><p className="text-xs font-black text-emerald-700">สาขาที่มีการเบิก</p><p className="mt-2 text-3xl font-black text-slate-800">{activeBranchCount}</p><p className="mt-1 text-xs font-semibold text-emerald-600">จากทั้งหมด {allBranches.length} สาขา</p></div>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
+          <section className="rounded-2xl border border-pink-100 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between"><div><h2 className="font-black text-slate-800">แนวโน้มค่าใช้จ่าย 7 วันล่าสุด</h2><p className="mt-1 text-xs font-semibold text-slate-500">ข้อมูลจากใบเบิกที่อนุมัติแล้ว</p></div><p className="text-[11px] font-semibold text-slate-400">{lastUpdated ? `อัปเดต ${lastUpdated.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.` : ''}</p></div>
+            <div className="mt-6 flex h-44 items-end gap-2">
+              {dailyTotals.map((day) => <div key={day.key} className="flex min-w-0 flex-1 flex-col items-center gap-2"><span className="text-[10px] font-bold text-slate-500">{day.total > 0 ? day.total.toLocaleString('th-TH') : ''}</span><div className="w-full rounded-t-lg bg-linear-to-t from-pink-500 to-rose-300 transition-all" style={{ height: `${Math.max(4, (day.total / maxDailyTotal) * 115)}px` }} /><span className="whitespace-nowrap text-[10px] font-bold text-slate-500">{day.label}</span></div>)}
+            </div>
+          </section>
+          <section className="rounded-2xl border border-amber-100 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-black text-slate-800">ใบเบิกรอล่าสุด</h2><Link href="/admin/requisitions" className="text-xs font-bold text-pink-600">ดูทั้งหมด →</Link></div><div className="mt-4 space-y-2">{pendingLatest.length === 0 ? <p className="py-10 text-center text-sm font-semibold text-slate-400">ไม่มีใบเบิกรอดำเนินการ</p> : pendingLatest.map((req) => <Link key={req.id} href="/admin/requisitions" className="flex items-center justify-between rounded-xl border border-amber-100 bg-amber-50/60 p-3 hover:bg-amber-50"><div className="min-w-0"><p className="truncate text-sm font-black text-slate-700">{req.branch_name}</p><p className="truncate text-xs font-semibold text-slate-500">{req.requester_name}</p></div><span className="text-xs font-bold text-amber-700">ตรวจสอบ →</span></Link>)}</div></section>
         </div>
 
         {/* ── Table ── */}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import Link from 'next/link';
+import AdminNav from '../components/AdminNav';
 import ExcelJS from 'exceljs';
 import {
   PDFDownloadLink,
@@ -429,6 +429,7 @@ export default function AdminReportsPage() {
 
   // Full data (for export + totals)
   const currentData    = getFilteredData();
+  const hasReportData  = currentData.totalOrders > 0;
   const itemsTotalQty  = currentData.itemsList.reduce((s, i) => s + i.totalQuantity, 0);
   const itemsTotalCost = currentData.itemsList.reduce((s, i) => s + i.totalCost,     0);
 
@@ -663,23 +664,7 @@ export default function AdminReportsPage() {
       <div className="max-w-4xl mx-auto space-y-5 print:max-w-full">
 
         {/* ── Navbar ── */}
-        <nav className="bg-white border border-pink-100 rounded-2xl p-4 sm:p-5 shadow-sm shadow-pink-100/50 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center shadow-md shadow-pink-500/10 overflow-hidden border border-pink-200">
-              <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
-            </div>
-            <div>
-              <p className="text-xl font-black tracking-tight text-slate-800 leading-tight">Aemori</p>
-              <p className="text-xs font-bold text-pink-400 mt-0.5 uppercase tracking-widest">ระบบจัดการเบิกของ Aemori</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-xs font-bold bg-pink-50 p-1 rounded-xl border border-pink-100/80">
-            <Link href="/admin/dashboard" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📊 แดชบอร์ด</Link>
-            <Link href="/admin/requisitions" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📝 ใบเบิก</Link>
-            <Link href="/admin/reports" className="bg-white text-pink-600 shadow-sm shadow-pink-100 px-4 py-2 rounded-lg transition-all">📈 รายงาน</Link>
-            <Link href="/admin/inventory" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📦 คลัง</Link>
-          </div>
-        </nav>
+        <div className="print:hidden"><AdminNav /></div>
 
         {/* ── Filter Panel ── */}
         <div className="bg-white p-5 rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 space-y-5 print:hidden">
@@ -694,7 +679,7 @@ export default function AdminReportsPage() {
                 fileName={`Report_${selectedReportType}_${selectedBranch}${dateFrom ? `_${dateFrom}` : ''}_to_${dateTo || 'now'}.pdf`}
               >
                 {({ loading: pdfLoading }) => (
-                  <div className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer border ${
+                  <div className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${!hasReportData ? 'pointer-events-none cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300 opacity-60' :
                     pdfLoading
                       ? 'bg-pink-50 text-pink-400 border-pink-100'
                       : 'bg-white text-slate-700 border-pink-100 hover:border-pink-300 hover:bg-pink-50/50 shadow-sm active:scale-95'
@@ -710,7 +695,8 @@ export default function AdminReportsPage() {
               <button
                 type="button"
                 onClick={handleExportToExcel}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-white text-emerald-600 border border-emerald-100 hover:border-emerald-300 hover:bg-emerald-50/50 shadow-sm active:scale-95 transition-all"
+                disabled={!hasReportData}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-white text-emerald-600 border border-emerald-100 hover:border-emerald-300 hover:bg-emerald-50/50 shadow-sm active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <span>📗</span><span>Excel</span>
               </button>
@@ -747,6 +733,11 @@ export default function AdminReportsPage() {
                 {allBranches.map((b) => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3">
+            <p className="text-xs font-bold text-slate-600">พบ {currentData.totalOrders.toLocaleString('th-TH')} ใบเบิก · {currentData.itemsList.length.toLocaleString('th-TH')} รายการสินค้า · {currentData.branchSummaries.length.toLocaleString('th-TH')} สาขา</p>
+            <button type="button" onClick={() => { setSelectedReportType('compare'); setSelectedBranch('all'); setDateFrom(''); setDateTo(''); setBranchPage(1); setItemsPage(1); }} className="text-xs font-black text-rose-500 hover:underline">ล้างตัวกรองทั้งหมด</button>
           </div>
 
           <div className="space-y-3">

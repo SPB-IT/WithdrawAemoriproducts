@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import Link from 'next/link';
+import AdminNav from '../components/AdminNav';
 
 interface InventoryItem {
   id: string;
@@ -17,6 +17,7 @@ interface InventoryItem {
 export default function AdminInventoryPage() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -30,6 +31,8 @@ export default function AdminInventoryPage() {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [sortBy, setSortBy] = useState<'name' | 'price-asc' | 'price-desc' | 'code'>('name');
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
   const [newBranchName, setNewBranchName] = useState('');
 
@@ -44,10 +47,36 @@ export default function AdminInventoryPage() {
 
   async function fetchInventory() {
     setLoading(true);
-    const { data, error } = await supabase.from('items').select('*').order('name');
-    if (data) setItems(data);
-    if (error) console.error(error);
-    setLoading(false);
+    setLoadError('');
+    let timeoutId = 0;
+
+    try {
+      const inventoryRequest = supabase
+        .from('items')
+        .select('*')
+        .order('name');
+      const requestTimeout = new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(
+          () => reject(new Error('INVENTORY_REQUEST_TIMEOUT')),
+          12000,
+        );
+      });
+      const { data, error } = await Promise.race([inventoryRequest, requestTimeout]);
+
+      if (error) throw error;
+      setItems(data ?? []);
+    } catch (error) {
+      const message = error instanceof Error && error.message === 'INVENTORY_REQUEST_TIMEOUT'
+        ? 'เชื่อมต่อฐานข้อมูลนานเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่'
+        : error instanceof Error
+          ? error.message
+          : 'ไม่สามารถโหลดข้อมูลคลังสินค้าได้';
+      console.error('Error fetching inventory:', error);
+      setLoadError(message);
+    } finally {
+      window.clearTimeout(timeoutId);
+      setLoading(false);
+    }
   }
 
   // ฟังก์ชันดึงสาขา
@@ -100,6 +129,12 @@ export default function AdminInventoryPage() {
       alert('กรุณากรอกหน่วยนับ');
       return;
     }
+    if (Number(formData.price) < 0) { alert('ราคาสินค้าต้องไม่ติดลบ'); return; }
+    const normalizedCode = formData.product_code.trim().toLowerCase();
+    if (normalizedCode && items.some((item) => item.id !== editingItem?.id && (item.product_code || '').trim().toLowerCase() === normalizedCode)) {
+      alert('รหัสสินค้านี้มีอยู่ในระบบแล้ว');
+      return;
+    }
 
     const dataToSave = {
       product_code: formData.product_code.trim(),
@@ -124,10 +159,19 @@ export default function AdminInventoryPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('ยืนยันการลบรายการนี้?')) return;
+    if (!window.confirm('ยืนยันการลบสินค้านี้? หากสินค้าเคยถูกเบิก อาจทำให้ประวัติและรายงานอ้างอิงรายการไม่ได้ แนะนำให้ปิดใช้งานแทน')) return;
     const { error } = await supabase.from('items').delete().eq('id', id);
     if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return; }
     fetchInventory();
+  };
+
+  const toggleItemStatus = async (item: InventoryItem) => {
+    setItems((prev) => prev.map((row) => row.id === item.id ? { ...row, is_active: !row.is_active } : row));
+    const { error } = await supabase.from('items').update({ is_active: !item.is_active }).eq('id', item.id);
+    if (error) {
+      setItems((prev) => prev.map((row) => row.id === item.id ? item : row));
+      alert('เปลี่ยนสถานะไม่สำเร็จ: ' + error.message);
+    }
   };
 
   const handleAddBranch = async () => {
@@ -141,9 +185,15 @@ export default function AdminInventoryPage() {
 
   const filteredItems = items.filter(
     (item) =>
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.product_code || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      (item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.product_code || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+      (statusFilter === 'all' || (statusFilter === 'active' ? item.is_active : !item.is_active))
+  ).sort((a, b) => {
+    if (sortBy === 'price-asc') return a.price - b.price;
+    if (sortBy === 'price-desc') return b.price - a.price;
+    if (sortBy === 'code') return (a.product_code || '').localeCompare(b.product_code || '', 'th');
+    return a.name.localeCompare(b.name, 'th');
+  });
 
   const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -162,42 +212,37 @@ export default function AdminInventoryPage() {
       </div>
     );
 
+  if (loadError)
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-pink-50/40 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-rose-100 bg-white p-7 text-center shadow-xl shadow-pink-100/60">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-2xl">⚠️</div>
+          <h1 className="mt-4 text-lg font-black text-slate-800">โหลดข้อมูลคลังสินค้าไม่สำเร็จ</h1>
+          <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-500">{loadError}</p>
+          <button
+            type="button"
+            onClick={fetchInventory}
+            className="mt-5 h-11 w-full rounded-xl bg-linear-to-r from-pink-500 to-rose-400 text-sm font-black text-white shadow-md shadow-pink-200 transition-all hover:from-pink-600 hover:to-rose-500 active:scale-[0.98]"
+          >
+            ↻ ลองโหลดอีกครั้ง
+          </button>
+        </div>
+      </div>
+    );
+
   return (
     <div className="min-h-screen bg-linear-to-br from-pink-50 via-white to-rose-50/30 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800">
       <div className="max-w-7xl mx-auto space-y-5">
 
-        <nav className="bg-white border border-pink-100 rounded-2xl p-4 sm:p-5 shadow-sm shadow-pink-100/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center shadow-md shadow-pink-500/10 overflow-hidden border border-pink-200">
-              <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
-            </div>
-            <div>
-              <p className="text-xl font-black tracking-tight text-slate-800 leading-tight">Aemori</p>
-              <p className="text-xs font-bold text-pink-400 mt-0.5 uppercase tracking-widest">ระบบจัดการเบิกของ Aemori</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-xs font-bold bg-pink-50 p-1 rounded-xl border border-pink-100/80">
-            <Link href="/admin/dashboard" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📊 แดชบอร์ด</Link>
-            <Link href="/admin/requisitions" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📝 ใบเบิก</Link>
-            <Link href="/admin/reports" className="px-4 py-2 rounded-lg text-slate-500 hover:text-pink-500 hover:bg-white/70 transition-all">📈 รายงาน</Link>
-            <Link href="/admin/inventory" className="bg-white text-pink-600 shadow-sm shadow-pink-100 px-4 py-2 rounded-lg transition-all">📦 คลัง</Link>
-          </div>
-        </nav>
+        <AdminNav />
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-5 rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 gap-4">
-          <div className="flex-1 min-w-0">
+        <div className="space-y-4 rounded-2xl border border-pink-100 bg-white p-5 shadow-sm shadow-pink-100/50">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl font-black text-slate-800 tracking-tight">📦 คลังสินค้า</h1>
-            <p className="text-xs font-semibold text-pink-400 mt-1 uppercase tracking-widest">จัดการรายการสินค้าและสาขา</p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-pink-500">จัดการรายการสินค้าและสาขา · พบ {filteredItems.length} รายการ</p>
           </div>
-          <div className="flex gap-2 shrink-0">
-          <p className="text-xs text-left font-semibold text-pink-400 mt-1 uppercase tracking-widest">ค้นหารายชื่อสินค้า <br />
-            <input
-              type="text"
-              placeholder="🔍 ค้นหาชื่อสินค้าหรือรหัส..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="mt-3 text-sm border border-pink-100 bg-pink-50 px-4 py-2.5 rounded-xl w-full sm:w-72 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all font-medium text-slate-700 placeholder:text-slate-400"
-            /></p>
+          <div className="flex shrink-0 gap-2">
             <button
               onClick={() => setIsBranchModalOpen(true)}
               className="inline-flex items-center gap-2 bg-white border border-pink-200 text-pink-500 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-pink-50 shadow-sm transition-all active:scale-95"
@@ -213,6 +258,16 @@ export default function AdminInventoryPage() {
             >
               + เพิ่มสินค้า
             </button>
+          </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_180px_180px]">
+            <input type="text" placeholder="🔍 ค้นหาชื่อสินค้าหรือรหัส..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-11 rounded-xl border border-pink-100 bg-pink-50/60 px-4 text-sm font-medium text-slate-700 outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-200" />
+            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value as typeof statusFilter); setCurrentPage(1); }} className="h-11 rounded-xl border border-pink-100 bg-white px-3 text-sm font-bold text-slate-600 outline-none">
+              <option value="all">ทุกสถานะ</option><option value="active">เปิดใช้งาน</option><option value="inactive">ปิดใช้งาน</option>
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="h-11 rounded-xl border border-pink-100 bg-white px-3 text-sm font-bold text-slate-600 outline-none">
+              <option value="name">เรียงตามชื่อ</option><option value="code">เรียงตามรหัส</option><option value="price-asc">ราคาน้อยไปมาก</option><option value="price-desc">ราคามากไปน้อย</option>
+            </select>
           </div>
         </div>
 
@@ -244,7 +299,15 @@ export default function AdminInventoryPage() {
         )}
 
         <div className="bg-white rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 p-3 md:hidden">
+            {currentItems.length === 0 ? <p className="py-16 text-center text-sm font-bold text-slate-400">ไม่พบสินค้า</p> : currentItems.map((item) => (
+              <article key={`mobile-${item.id}`} className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+                <div className="flex gap-3"><div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-pink-100 bg-pink-50">{item.image_url ? <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-xl">📦</span>}</div><div className="min-w-0 flex-1"><p className="font-black text-slate-800">{item.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{item.product_code || 'ไม่มีรหัส'} · {item.unit}</p><p className="mt-1 font-black text-pink-600">{item.price.toLocaleString('th-TH')} ฿</p></div></div>
+                <div className="mt-4 flex items-center justify-between gap-2"><button type="button" onClick={() => toggleItemStatus(item)} className={`rounded-lg px-3 py-2 text-xs font-bold ${item.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{item.is_active ? '● เปิดใช้งาน' : '○ ปิดใช้งาน'}</button><div className="flex gap-2"><button onClick={() => { setEditingItem(item); setFormData(item); }} className="rounded-lg border border-pink-200 px-3 py-2 text-xs font-bold text-pink-600">แก้ไข</button><button onClick={() => handleDelete(item.id)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-600">ลบ</button></div></div>
+              </article>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="bg-pink-50/80 border-b border-pink-100">
@@ -303,10 +366,12 @@ export default function AdminInventoryPage() {
                         <span className="ml-1 text-[10px] text-pink-400 font-bold">฿</span>
                       </td>
                       <td className="p-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border ${item.is_active ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${item.is_active ? 'bg-emerald-400' : 'bg-slate-300'}`} />
-                          {item.is_active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
-                        </span>
+                        <button type="button" onClick={() => toggleItemStatus(item)} aria-pressed={item.is_active} className={`inline-flex min-w-28 items-center gap-2.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-all ${item.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                          <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${item.is_active ? 'bg-emerald-400' : 'bg-slate-300'}`}>
+                            <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${item.is_active ? 'translate-x-5' : 'translate-x-0'}`} />
+                          </span>
+                          <span className="whitespace-nowrap">{item.is_active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}</span>
+                        </button>
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-2">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface Item {
@@ -175,18 +175,50 @@ export default function RequisitionPage() {
   const [cartBounce, setCartBounce]     = useState(false);
   const [clickedItemId, setClickedItemId] = useState<string | null>(null);
   const [currentPage, setCurrentPage]   = useState(1);
+  const [submittedRequisitionId, setSubmittedRequisitionId] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
+  const cartHydratedRef = useRef(false);
 
   useEffect(() => {
     async function fetchData() {
-      const [{ data: itemsData }, { data: branchesData }] = await Promise.all([
+      setCatalogLoading(true);
+      setCatalogError('');
+      const [{ data: itemsData, error: itemsError }, { data: branchesData, error: branchesError }] = await Promise.all([
         supabase.from('items').select('id, name, unit, image_url').eq('is_active', true).order('name'),
         supabase.from('branches').select('name').order('name'),
       ]);
       if (itemsData)   setItems(itemsData);
       if (branchesData) setBranches(branchesData);
+      if (itemsError || branchesError) setCatalogError('โหลดสินค้าและสาขาไม่สำเร็จ กรุณารีเฟรชหน้าแล้วลองใหม่');
+      setCatalogLoading(false);
     }
     fetchData();
   }, []);
+
+  useEffect(() => {
+    try {
+      const savedCart = window.localStorage.getItem('aemori-requisition-cart');
+      if (savedCart) setCart(JSON.parse(savedCart) as CartItem[]);
+    } catch {
+      window.localStorage.removeItem('aemori-requisition-cart');
+    }
+    cartHydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!cartHydratedRef.current) return;
+    window.localStorage.setItem('aemori-requisition-cart', JSON.stringify(cart));
+  }, [cart]);
+
+  useEffect(() => {
+    const warnBeforeLeave = (event: BeforeUnloadEvent) => {
+      if (cart.length === 0) return;
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warnBeforeLeave);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeave);
+  }, [cart.length]);
 
   const filteredItems = items.filter((item) =>
     item.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -262,7 +294,7 @@ export default function RequisitionPage() {
     if (detailError) {
       alert('เกิดข้อผิดพลาดในการบันทึกรายการ: ' + detailError.message);
     } else {
-      alert('ส่งคำขอเบิกสินค้าเรียบร้อยแล้ว!');
+      setSubmittedRequisitionId(reqData.id);
       setCart([]);
       setSearchTerm('');
       setRequesterName('');
@@ -274,6 +306,9 @@ export default function RequisitionPage() {
   return (
     <div className="min-h-screen bg-[#fdf4f7] py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800 relative pb-24 lg:pb-10">
       <div className="max-w-7xl mx-auto space-y-5">
+
+        {catalogError && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-bold text-rose-600">⚠️ {catalogError}</div>}
+        {catalogLoading && <div className="rounded-2xl border border-pink-100 bg-white px-4 py-3 text-center text-sm font-bold text-pink-500"><span className="mr-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-pink-200 border-t-pink-500" />กำลังโหลดสินค้า...</div>}
 
         {/* ── Header ── */}
         <div className="relative bg-white border border-pink-100/80 rounded-2xl overflow-hidden shadow-sm">
@@ -496,6 +531,18 @@ export default function RequisitionPage() {
           </div>
         </div>
       </div>
+
+      {submittedRequisitionId && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/30 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-emerald-100 bg-white p-7 text-center shadow-2xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl">✓</div>
+            <h2 className="mt-4 text-xl font-black text-slate-800">ส่งใบเบิกเรียบร้อยแล้ว</h2>
+            <p className="mt-2 text-sm font-semibold text-slate-500">ระบบบันทึกคำขอและส่งให้ผู้ดูแลตรวจสอบแล้ว</p>
+            <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500">เลขอ้างอิง: {submittedRequisitionId.slice(0, 8).toUpperCase()}</div>
+            <button type="button" onClick={() => setSubmittedRequisitionId(null)} className="mt-5 h-11 w-full rounded-xl bg-linear-to-r from-pink-500 to-rose-400 text-sm font-black text-white">สร้างใบเบิกใหม่</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Mobile floating bar ── */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-pink-100 px-4 py-3 z-40 flex items-center justify-between shadow-[0_-8px_24px_rgba(244,63,94,0.08)]">
