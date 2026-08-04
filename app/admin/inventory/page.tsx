@@ -12,6 +12,7 @@ interface InventoryItem {
   price: number;
   is_active: boolean;
   image_url: string;
+  stock_quantity: number;
 }
 
 export default function AdminInventoryPage() {
@@ -28,6 +29,7 @@ export default function AdminInventoryPage() {
     price: 0,
     is_active: true,
     image_url: '',
+    stock_quantity: 0,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,6 +37,11 @@ export default function AdminInventoryPage() {
   const [sortBy, setSortBy] = useState<'name' | 'price-asc' | 'price-desc' | 'code'>('name');
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
   const [newBranchName, setNewBranchName] = useState('');
+  const [restockingItem, setRestockingItem] = useState<InventoryItem | null>(null);
+  const [restockAmount, setRestockAmount] = useState('');
+  const [restockSaving, setRestockSaving] = useState(false);
+  const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
+  const [quickPickerSearch, setQuickPickerSearch] = useState('');
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
@@ -130,6 +137,7 @@ export default function AdminInventoryPage() {
       return;
     }
     if (Number(formData.price) < 0) { alert('ราคาสินค้าต้องไม่ติดลบ'); return; }
+    if (Number(formData.stock_quantity) < 0) { alert('จำนวนคงเหลือต้องไม่ติดลบ'); return; }
     const normalizedCode = formData.product_code.trim().toLowerCase();
     if (normalizedCode && items.some((item) => item.id !== editingItem?.id && (item.product_code || '').trim().toLowerCase() === normalizedCode)) {
       alert('รหัสสินค้านี้มีอยู่ในระบบแล้ว');
@@ -143,6 +151,7 @@ export default function AdminInventoryPage() {
       price: Number(formData.price) || 0,
       is_active: formData.is_active,
       image_url: formData.image_url,
+      stock_quantity: Math.floor(Number(formData.stock_quantity)) || 0,
     };
 
     if (editingItem?.id) {
@@ -154,7 +163,7 @@ export default function AdminInventoryPage() {
     }
 
     setEditingItem(null);
-    setFormData({ product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '' });
+    setFormData({ product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '', stock_quantity: 0 });
     await fetchInventory();
   };
 
@@ -172,6 +181,51 @@ export default function AdminInventoryPage() {
       setItems((prev) => prev.map((row) => row.id === item.id ? item : row));
       alert('เปลี่ยนสถานะไม่สำเร็จ: ' + error.message);
     }
+  };
+
+  const openRestockModal = (item: InventoryItem) => {
+    setRestockingItem(item);
+    setRestockAmount('');
+  };
+
+  const quickPickerResults = items.filter((item) => {
+    const term = quickPickerSearch.trim().toLowerCase();
+    if (!term) return true;
+    return item.name.toLowerCase().includes(term) || (item.product_code || '').toLowerCase().includes(term);
+  });
+
+  const openEditFromPicker = (item: InventoryItem) => {
+    setEditingItem(item);
+    setFormData(item);
+    setIsQuickPickerOpen(false);
+    setQuickPickerSearch('');
+  };
+
+  const openRestockFromPicker = (item: InventoryItem) => {
+    setIsQuickPickerOpen(false);
+    setQuickPickerSearch('');
+    openRestockModal(item);
+  };
+
+  const handleRestockSave = async () => {
+    if (!restockingItem) return;
+    const amount = Math.floor(Number(restockAmount));
+    if (!amount || amount <= 0) { alert('กรุณากรอกจำนวนที่รับเข้ามากกว่า 0'); return; }
+
+    setRestockSaving(true);
+    const { error } = await supabase.rpc('increment_item_stock', {
+      p_item_id: restockingItem.id,
+      p_qty: amount,
+    });
+    if (error) {
+      alert('รับสินค้าเข้าคลังไม่สำเร็จ: ' + error.message);
+      setRestockSaving(false);
+      return;
+    }
+    setItems((prev) => prev.map((row) => row.id === restockingItem.id ? { ...row, stock_quantity: (row.stock_quantity ?? 0) + amount } : row));
+    setRestockSaving(false);
+    setRestockingItem(null);
+    setRestockAmount('');
   };
 
   const handleAddBranch = async () => {
@@ -250,9 +304,15 @@ export default function AdminInventoryPage() {
               🏬 จัดการสาขา
             </button>
             <button
+              onClick={() => { setIsQuickPickerOpen(true); setQuickPickerSearch(''); }}
+              className="inline-flex items-center gap-2 bg-white border border-pink-200 text-pink-500 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-pink-50 shadow-sm transition-all active:scale-95"
+            >
+              🔍 ค้นหา/จัดการสินค้า
+            </button>
+            <button
               onClick={() => {
-                setEditingItem({ id: '', product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '' });
-                setFormData({ product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '' });
+                setEditingItem({ id: '', product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '', stock_quantity: 0 });
+                setFormData({ product_code: '', name: '', unit: '', price: 0, is_active: true, image_url: '', stock_quantity: 0 });
               }}
               className="inline-flex items-center gap-2 bg-linear-to-r from-pink-500 to-rose-400 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:from-pink-600 hover:to-rose-500 shadow-md shadow-pink-200/50 transition-all active:scale-95"
             >
@@ -302,7 +362,7 @@ export default function AdminInventoryPage() {
           <div className="grid gap-3 p-3 md:hidden">
             {currentItems.length === 0 ? <p className="py-16 text-center text-sm font-bold text-slate-400">ไม่พบสินค้า</p> : currentItems.map((item) => (
               <article key={`mobile-${item.id}`} className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-                <div className="flex gap-3"><div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-pink-100 bg-pink-50">{item.image_url ? <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-xl">📦</span>}</div><div className="min-w-0 flex-1"><p className="font-black text-slate-800">{item.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{item.product_code || 'ไม่มีรหัส'} · {item.unit}</p><p className="mt-1 font-black text-pink-600">{item.price.toLocaleString('th-TH')} ฿</p></div></div>
+                <div className="flex gap-3"><div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-pink-100 bg-pink-50">{item.image_url ? <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-xl">📦</span>}</div><div className="min-w-0 flex-1"><p className="font-black text-slate-800">{item.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{item.product_code || 'ไม่มีรหัส'} · {item.unit}</p><p className="mt-1 font-black text-pink-600">{item.price.toLocaleString('th-TH')} ฿</p><div className="mt-1 flex items-center gap-2"><p className={`text-xs font-bold ${(item.stock_quantity ?? 0) <= 5 ? 'text-rose-500' : 'text-emerald-600'}`}>คงเหลือ {(item.stock_quantity ?? 0).toLocaleString('th-TH')} {item.unit}</p><button type="button" onClick={() => openRestockModal(item)} className="rounded-full bg-pink-50 px-2 py-0.5 text-[10px] font-black text-pink-600 border border-pink-200">➕ รับเข้า</button></div></div></div>
                 <div className="mt-4 flex items-center justify-between gap-2"><button type="button" onClick={() => toggleItemStatus(item)} className={`rounded-lg px-3 py-2 text-xs font-bold ${item.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{item.is_active ? '● เปิดใช้งาน' : '○ ปิดใช้งาน'}</button><div className="flex gap-2"><button onClick={() => { setEditingItem(item); setFormData(item); }} className="rounded-lg border border-pink-200 px-3 py-2 text-xs font-bold text-pink-600">แก้ไข</button><button onClick={() => handleDelete(item.id)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-600">ลบ</button></div></div>
               </article>
             ))}
@@ -316,6 +376,7 @@ export default function AdminInventoryPage() {
                   <th className="p-4 font-black text-pink-400 uppercase tracking-wider">ชื่อสินค้า</th>
                   <th className="p-4 font-black text-pink-400 uppercase tracking-wider text-center">หน่วยนับ</th>
                   <th className="p-4 font-black text-pink-400 uppercase tracking-wider text-right">ราคา / หน่วย</th>
+                  <th className="p-4 font-black text-pink-400 uppercase tracking-wider text-center">คงเหลือ</th>
                   <th className="p-4 font-black text-pink-400 uppercase tracking-wider text-center">สถานะ</th>
                   <th className="p-4 font-black text-pink-400 uppercase tracking-wider text-center">จัดการ</th>
                 </tr>
@@ -323,7 +384,7 @@ export default function AdminInventoryPage() {
               <tbody className="divide-y divide-pink-50">
                 {currentItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-24 text-center text-pink-300 font-bold text-sm tracking-wide">
+                    <td colSpan={8} className="py-24 text-center text-pink-300 font-bold text-sm tracking-wide">
                       <div className="flex flex-col items-center gap-2">
                         <span className="text-3xl">📦</span>
                         {searchTerm ? `ไม่พบรายการ "${searchTerm}"` : 'ยังไม่มีสินค้าในระบบ'}
@@ -364,6 +425,13 @@ export default function AdminInventoryPage() {
                       <td className="p-4 text-right font-black text-slate-700">
                         {(item.price ?? 0).toLocaleString()} 
                         <span className="ml-1 text-[10px] text-pink-400 font-bold">฿</span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span className={`inline-block min-w-14 rounded-lg px-3 py-1 text-xs font-black ${(item.stock_quantity ?? 0) <= 0 ? 'bg-rose-50 text-rose-600' : (item.stock_quantity ?? 0) <= 5 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                            {(item.stock_quantity ?? 0).toLocaleString('th-TH')}
+                          </span>
+                        </div>
                       </td>
                       <td className="p-4 text-center">
                         <button type="button" onClick={() => toggleItemStatus(item)} aria-pressed={item.is_active} className={`inline-flex min-w-28 items-center gap-2.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-all ${item.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
@@ -419,12 +487,91 @@ export default function AdminInventoryPage() {
               )}
             </div>
          </div>
+
+        {isQuickPickerOpen && (
+          <div className="fixed inset-0 bg-pink-900/20 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setIsQuickPickerOpen(false)}>
+            <div className="bg-white p-5 rounded-2xl w-full max-w-md shadow-2xl shadow-pink-200/50 border border-pink-100 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-3 pb-3 border-b border-pink-50">
+                <h3 className="font-black text-base text-slate-800">🔍 ค้นหา/จัดการสินค้า</h3>
+                <button onClick={() => setIsQuickPickerOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg leading-none px-1">✕</button>
+              </div>
+              <input
+                type="text"
+                autoFocus
+                placeholder="พิมพ์รหัสสินค้าหรือชื่อสินค้า..."
+                value={quickPickerSearch}
+                onChange={(e) => setQuickPickerSearch(e.target.value)}
+                className="mt-3 w-full h-11 rounded-xl border border-pink-100 bg-pink-50/60 px-4 text-sm font-medium text-slate-700 outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-200"
+              />
+              <div className="mt-3 flex-1 overflow-y-auto space-y-2 pr-0.5">
+                {quickPickerResults.length === 0 ? (
+                  <p className="py-10 text-center text-sm font-bold text-slate-400">ไม่พบสินค้าที่ค้นหา</p>
+                ) : (
+                  quickPickerResults.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3 rounded-xl border border-pink-100 bg-white p-2.5 hover:bg-pink-50/40 transition-all">
+                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-pink-100 bg-pink-50 flex items-center justify-center">
+                        {item.image_url ? <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" /> : <span className="text-base opacity-30">📦</span>}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-slate-800">{item.name}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-slate-400">{item.product_code || 'ไม่มีรหัส'} · คงเหลือ {(item.stock_quantity ?? 0).toLocaleString('th-TH')} {item.unit}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1.5">
+                        <button onClick={() => openEditFromPicker(item)} className="rounded-lg border border-pink-200 px-2.5 py-1.5 text-xs font-bold text-pink-600 hover:bg-pink-500 hover:text-white transition-all">แก้ไข</button>
+                        <button onClick={() => openRestockFromPicker(item)} className="rounded-lg border border-pink-200 bg-pink-50 px-2.5 py-1.5 text-xs font-bold text-pink-600 hover:bg-pink-500 hover:text-white transition-all">➕ รับเข้า</button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {selectedImage && (
           <div
             className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-pink-900/40 backdrop-blur-sm cursor-pointer"
             onClick={() => setSelectedImage(null)}
           >
             <img src={selectedImage} alt="Preview" className="max-w-[90vw] max-h-[90vh] rounded-2xl shadow-2xl border-4 border-white" />
+          </div>
+        )}
+
+        {restockingItem && (
+          <div className="fixed inset-0 bg-pink-900/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white p-6 rounded-2xl w-full max-w-xs shadow-2xl shadow-pink-200/50 border border-pink-100 space-y-4">
+              <div className="flex items-center gap-3 pb-3 border-b border-pink-50">
+                <div className="w-9 h-9 rounded-xl bg-linear-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white shadow-sm text-base">➕</div>
+                <div className="min-w-0">
+                  <h3 className="font-black text-base text-slate-800">รับสินค้าเข้าคลัง</h3>
+                  <p className="truncate text-xs font-semibold text-slate-400">{restockingItem.name}</p>
+                </div>
+              </div>
+              <p className="text-xs font-bold text-slate-500">คงเหลือปัจจุบัน: <span className="text-slate-700">{(restockingItem.stock_quantity ?? 0).toLocaleString('th-TH')} {restockingItem.unit}</span></p>
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-pink-400 uppercase tracking-widest">จำนวนที่รับเข้ามาเพิ่ม</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  autoFocus
+                  placeholder="เช่น 50"
+                  value={restockAmount}
+                  onChange={(e) => setRestockAmount(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleRestockSave(); }}
+                  className="w-full border border-pink-100 bg-pink-50/30 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
+                />
+                {restockAmount && Number(restockAmount) > 0 && (
+                  <p className="text-[11px] font-bold text-emerald-600">จะเป็นยอดคงเหลือใหม่: {((restockingItem.stock_quantity ?? 0) + Math.floor(Number(restockAmount))).toLocaleString('th-TH')} {restockingItem.unit}</p>
+                )}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setRestockingItem(null)} className="flex-1 py-3 bg-pink-50 text-pink-400 border border-pink-100 rounded-xl font-bold text-sm hover:bg-pink-100 transition-all">ยกเลิก</button>
+                <button onClick={handleRestockSave} disabled={restockSaving} className="flex-1 py-3 bg-linear-to-r from-pink-500 to-rose-400 text-white rounded-xl font-black text-sm hover:from-pink-600 hover:to-rose-500 shadow-md shadow-pink-200 transition-all disabled:opacity-60">
+                  {restockSaving ? 'กำลังบันทึก...' : 'ยืนยันรับเข้า'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -437,35 +584,23 @@ export default function AdminInventoryPage() {
                 </div>
                 <h3 className="font-black text-base text-slate-800">{editingItem.id ? 'แก้ไขข้อมูลสินค้า' : 'เพิ่มสินค้าใหม่'}</h3>
               </div>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-pink-400 uppercase tracking-widest">รูปภาพสินค้า</label>
-                  <div className="flex items-center gap-3">
-                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploading}
-                      className="px-4 py-2 bg-pink-50 text-pink-600 rounded-xl text-sm font-bold border border-pink-100 hover:bg-pink-100 transition-all disabled:opacity-60"
-                    >
-                      {uploading ? '⏳ กำลังอัปโหลด...' : '📷 เลือกรูปภาพ'}
-                    </button>
-                    {formData.image_url && (
-                      <button type="button" onClick={() => setFormData((prev) => ({ ...prev, image_url: '' }))} className="text-xs text-rose-400 hover:text-rose-600 font-bold">ลบรูป</button>
-                    )}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 p-2.5 bg-pink-50/40 border border-pink-100/60 rounded-xl">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-pink-100 bg-white flex items-center justify-center">
+                    {formData.image_url ? <img src={formData.image_url} alt="preview" className="h-full w-full object-cover" /> : <span className="text-lg opacity-30">📦</span>}
                   </div>
+                  <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex-1 px-3 py-2 bg-white text-pink-600 rounded-lg text-xs font-bold border border-pink-200 hover:bg-pink-100 transition-all disabled:opacity-60"
+                  >
+                    {uploading ? '⏳ กำลังอัปโหลด...' : '📷 เลือกรูปภาพ'}
+                  </button>
                   {formData.image_url && (
-                    <img src={formData.image_url} alt="preview" className="w-20 h-20 object-cover rounded-xl border border-pink-100 shadow-sm" />
+                    <button type="button" onClick={() => setFormData((prev) => ({ ...prev, image_url: '' }))} className="text-xs text-rose-400 hover:text-rose-600 font-bold px-1">ลบ</button>
                   )}
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-pink-400 uppercase tracking-widest">รหัสสินค้า</label>
-                  <input
-                    placeholder="เช่น PRD-001"
-                    value={formData.product_code || ''}
-                    onChange={(e) => setFormData({ ...formData, product_code: e.target.value })}
-                    className="w-full border border-pink-100 bg-pink-50/30 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
-                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-pink-400 uppercase tracking-widest">ชื่อสินค้า <span className="text-rose-400">*</span></label>
@@ -473,41 +608,63 @@ export default function AdminInventoryPage() {
                     placeholder="ชื่อสินค้า"
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full border border-pink-100 bg-pink-50/30 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
+                    className="w-full border border-pink-100 bg-pink-50/30 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-pink-400 uppercase tracking-widest">หน่วยนับ <span className="text-rose-400">*</span></label>
-                  <input
-                    placeholder="เช่น ชิ้น, กล่อง, แผ่น"
-                    value={formData.unit || ''}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                    className="w-full border border-pink-100 bg-pink-50/30 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-pink-400 uppercase tracking-widest">รหัสสินค้า</label>
+                    <input
+                      placeholder="PRD-001"
+                      value={formData.product_code || ''}
+                      onChange={(e) => setFormData({ ...formData, product_code: e.target.value })}
+                      className="w-full border border-pink-100 bg-pink-50/30 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-pink-400 uppercase tracking-widest">หน่วยนับ <span className="text-rose-400">*</span></label>
+                    <input
+                      placeholder="ชิ้น, กล่อง"
+                      value={formData.unit || ''}
+                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                      className="w-full border border-pink-100 bg-pink-50/30 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-pink-400 uppercase tracking-widest">ราคาต่อหน่วย (฿)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={formData.price || ''}
-                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-pink-100 bg-pink-50/30 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-pink-400 uppercase tracking-widest">ราคาต่อหน่วย (฿)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={formData.price || ''}
+                      onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                      className="w-full border border-pink-100 bg-pink-50/30 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-pink-400 uppercase tracking-widest">คงเหลือในคลัง</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={formData.stock_quantity ?? 0}
+                      onChange={(e) => setFormData({ ...formData, stock_quantity: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+                      className="w-full border border-pink-100 bg-pink-50/30 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-300 transition-all"
+                    />
+                  </div>
                 </div>
-                <label className="flex items-center gap-3 cursor-pointer p-3 bg-pink-50/40 hover:bg-pink-50 border border-pink-100/60 rounded-xl transition-all">
+                <label className="flex items-center gap-2.5 cursor-pointer p-2.5 bg-pink-50/40 hover:bg-pink-50 border border-pink-100/60 rounded-xl transition-all">
                   <input
                     type="checkbox"
                     checked={formData.is_active}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                    className="h-5 w-5 accent-pink-500 rounded"
+                    className="h-5 w-5 accent-pink-500 rounded shrink-0"
                   />
-                  <div>
-                    <span className="text-sm font-bold text-slate-700">เปิดใช้งานรายการนี้</span>
-                    <p className="text-xs text-slate-400 mt-0.5">สินค้าจะแสดงในหน้าเบิกของสาขา</p>
-                  </div>
+                  <span className="text-sm font-bold text-slate-700">เปิดใช้งาน (แสดงในหน้าเบิกของสาขา)</span>
                 </label>
               </div>
               <div className="flex gap-2 pt-1">

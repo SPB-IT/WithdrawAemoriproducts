@@ -16,6 +16,7 @@ interface Requisition {
 
 interface RequisitionDetail {
   id: string;
+  item_id: string;
   quantity: number;
   price_at_time: number;
   rejection_reason: string | null;
@@ -230,7 +231,7 @@ export default function AdminRequisitionsPage() {
     setLoadingDetails(true);
     const { data, error } = await supabase
       .from('requisition_details')
-      .select('id, quantity, price_at_time, rejection_reason, items (name, unit, image_url)')
+      .select('id, item_id, quantity, price_at_time, rejection_reason, items (name, unit, image_url)')
       .eq('requisition_id', req.id);
     if (data) setDetails(data as unknown as RequisitionDetail[]);
     if (error) console.error(error);
@@ -242,6 +243,34 @@ export default function AdminRequisitionsPage() {
       newStatus === 'approved' ? 'อนุมัติ' :
       newStatus === 'rejected' ? 'ปฏิเสธ' : 'ยกเลิกการอนุมัติ';
     if (!window.confirm(`ยืนยันการ "${label}" ใบเบิกนี้?`)) return;
+
+    // ถ้าใบเบิกนี้เคยอนุมัติแล้ว (ตัดสต็อกไปแล้ว) แล้วกำลังจะยกเลิกการอนุมัติ ให้คืนจำนวนคงเหลือกลับเข้าคลัง
+    const wasApproved = selectedReq?.id === id && selectedReq.status === 'approved' && newStatus !== 'approved';
+    if (wasApproved) {
+      const { data: detailRows, error: detailFetchError } = await supabase
+        .from('requisition_details')
+        .select('item_id, quantity, rejection_reason')
+        .eq('requisition_id', id);
+      if (detailFetchError) {
+        alert(`เกิดข้อผิดพลาดในการดึงรายการเพื่อคืนสต็อก: ${detailFetchError.message}`);
+        return;
+      }
+      const restoreResults = await Promise.all(
+        (detailRows ?? [])
+          .filter((detail) => detail.item_id && !detail.rejection_reason)
+          .map((detail) =>
+            supabase.rpc('increment_item_stock', {
+              p_item_id: detail.item_id,
+              p_qty: detail.quantity,
+            })
+          )
+      );
+      const restoreError = restoreResults.find((result) => result.error)?.error;
+      if (restoreError) {
+        alert(`เกิดข้อผิดพลาดในการคืนจำนวนคงเหลือ: ${restoreError.message}\nกรุณาปรับจำนวนคงเหลือด้วยตนเองที่หน้าคลังสินค้า`);
+      }
+    }
+
     const { error } = await supabase.from('requisitions').update({ status: newStatus }).eq('id', id);
     if (error) {
       alert(`เกิดข้อผิดพลาด: ${error.message}`);
@@ -294,10 +323,29 @@ export default function AdminRequisitionsPage() {
 
     if (error) {
       alert(`อนุมัติใบเบิกไม่สำเร็จ: ${error.message}`);
-    } else {
-      setSelectedReq(null);
-      await Promise.all([fetchRequisitions(currentPage), fetchCounts()]);
+      setSavingApproval(false);
+      return;
     }
+
+    // ตัดจำนวนสินค้าคงเหลือในคลังอัตโนมัติ ตามจำนวนที่อนุมัติจริงของแต่ละรายการ
+    const stockResults = await Promise.all(
+      activeDetails
+        .filter((detail) => detail.item_id)
+        .map((detail) =>
+          supabase.rpc('decrement_item_stock', {
+            p_item_id: detail.item_id,
+            p_qty: detail.quantity,
+          })
+        )
+    );
+    const stockError = stockResults.find((result) => result.error)?.error;
+    if (stockError) {
+      // ใบเบิกอนุมัติสำเร็จแล้ว แต่ตัดสต็อกไม่สำเร็จ แจ้งเตือนให้แอดมินไปปรับจำนวนคงเหลือเอง
+      alert(`อนุมัติใบเบิกสำเร็จ แต่ตัดจำนวนคงเหลือในคลังไม่สำเร็จ: ${stockError.message}\nกรุณาปรับจำนวนคงเหลือด้วยตนเองที่หน้าคลังสินค้า`);
+    }
+
+    setSelectedReq(null);
+    await Promise.all([fetchRequisitions(currentPage), fetchCounts()]);
     setSavingApproval(false);
   };
 
