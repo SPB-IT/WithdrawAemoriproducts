@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import AdminNav from '../components/AdminNav';
+import ExcelJS from 'exceljs';
 
 interface InventoryItem {
   id: string;
@@ -256,6 +257,96 @@ export default function AdminInventoryPage() {
     setCurrentPage(1);
   }, [searchTerm]);
 
+  const styleHeaderRow = (row: ExcelJS.Row) => {
+    row.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4EC' } };
+      cell.font = { bold: true, size: 12 };
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+  };
+
+  const styleDataRow = (row: ExcelJS.Row, rightAlignCols: number[] = []) => {
+    row.eachCell((cell) => {
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+    rightAlignCols.forEach((col) => { row.getCell(col).alignment = { horizontal: 'right' }; });
+  };
+
+  const handleExportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('คลังสินค้า');
+
+    worksheet.mergeCells('A1:G1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = '📦 รายการสินค้าคงคลัง';
+    titleCell.font = { bold: true, size: 18 };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(1).height = 30;
+
+    worksheet.mergeCells('A2:G2');
+    const dateCell = worksheet.getCell('A2');
+    dateCell.value = `ส่งออกเมื่อ: ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })} · พบ ${filteredItems.length} รายการ`;
+    dateCell.font = { italic: true, size: 11, color: { argb: 'FF888888' } };
+    dateCell.alignment = { horizontal: 'center' };
+
+    worksheet.addRow([]); // แถวเว้นระยะ
+
+    const headerRow = worksheet.addRow([
+      'รหัสสินค้า', 'ชื่อสินค้า', 'หน่วยนับ', 'ราคาต่อหน่วย (฿)', 'คงเหลือในคลัง', 'มูลค่าคงเหลือ (฿)', 'สถานะ',
+    ]);
+    styleHeaderRow(headerRow);
+
+    let totalValue = 0;
+    filteredItems.forEach((item) => {
+      const stock = item.stock_quantity ?? 0;
+      const value = stock * (item.price ?? 0);
+      totalValue += value;
+
+      const row = worksheet.addRow([
+        item.product_code || '-',
+        item.name,
+        item.unit,
+        item.price ?? 0,
+        stock,
+        value,
+        item.is_active ? 'เปิดใช้งาน' : 'ปิดใช้งาน',
+      ]);
+      styleDataRow(row, [4, 5, 6]);
+      row.getCell(4).numFmt = '#,##0.00';
+      row.getCell(6).numFmt = '#,##0.00';
+      if (!item.is_active) {
+        row.eachCell((cell) => { cell.font = { color: { argb: 'FF999999' }, italic: true }; });
+      }
+    });
+
+    worksheet.addRow([]);
+    const sumRow = worksheet.addRow(['', '', '', '', '', totalValue, '']);
+    sumRow.font = { bold: true, size: 12 };
+    sumRow.getCell(6).numFmt = '#,##0.00';
+    sumRow.getCell(6).alignment = { horizontal: 'right' };
+    sumRow.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4EC' } };
+
+    worksheet.columns = [
+      { width: 16 }, // รหัสสินค้า
+      { width: 32 }, // ชื่อสินค้า
+      { width: 12 }, // หน่วยนับ
+      { width: 16 }, // ราคาต่อหน่วย
+      { width: 16 }, // คงเหลือในคลัง
+      { width: 18 }, // มูลค่าคงเหลือ
+      { width: 12 }, // สถานะ
+    ];
+
+    const fileName = `Inventory_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   if (loading)
     return (
       <div className="min-h-screen flex items-center justify-center bg-pink-50/40">
@@ -297,6 +388,12 @@ export default function AdminInventoryPage() {
             <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-pink-500">จัดการรายการสินค้าและสาขา · พบ {filteredItems.length} รายการ</p>
           </div>
           <div className="flex shrink-0 gap-2">
+            <button
+              onClick={handleExportToExcel}
+              className="inline-flex items-center gap-2 bg-white border border-emerald-200 text-emerald-600 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-emerald-50 shadow-sm transition-all active:scale-95"
+            >
+              📊 Export Excel
+            </button>
             <button
               onClick={() => setIsBranchModalOpen(true)}
               className="inline-flex items-center gap-2 bg-white border border-pink-200 text-pink-500 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-pink-50 shadow-sm transition-all active:scale-95"
