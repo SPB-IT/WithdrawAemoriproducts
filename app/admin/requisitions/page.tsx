@@ -7,6 +7,7 @@ import AdminNav from '../components/AdminNav';
 interface Requisition {
   id: string;
   created_at: string;
+  approved_at: string | null;
   branch_name: string;
   requester_name: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -39,6 +40,7 @@ export default function AdminRequisitionsPage() {
   const [filterStatus, setFilterStatus]     = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [searchTerm, setSearchTerm]         = useState('');
   const [lastUpdated, setLastUpdated]       = useState<Date | null>(null);
+  const [schemaWarning, setSchemaWarning]   = useState('');
 
   // Pagination state
   const [currentPage, setCurrentPage]   = useState(1);
@@ -65,6 +67,12 @@ export default function AdminRequisitionsPage() {
       day: 'numeric', month: 'long', year: 'numeric',
     });
     const timeStr = new Date(req.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    const requestedAtStr = `${dateStr} เวลา ${timeStr} น.`;
+    const approvedAtStr = req.approved_at
+      ? `${new Date(req.approved_at).toLocaleString('th-TH', {
+          day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        })} น.`
+      : '-';
     const rows = detailList.map((d, i) => {
       const rejected = !!d.rejection_reason;
       return `
@@ -91,9 +99,12 @@ export default function AdminRequisitionsPage() {
         body { margin: 30px 40px; color: #1e293b; font-size: 14px; }
         h1 { font-size: 20px; font-weight: 700; text-align: center; margin: 0 0 4px; }
         .sub { text-align: center; color: #db2777; font-size: 13px; margin-bottom: 20px; }
-        .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #fff0f6; border: 1px solid #fbcfe8; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; font-size: 13px; }
+        .meta { display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; background: #fff7fa; border: 1px solid #fbcfe8; border-radius: 12px; margin-bottom: 20px; font-size: 13px; }
+        .meta-item { min-width: 0; min-height: 62px; padding: 12px 16px; border-bottom: 1px solid #fbcfe8; }
+        .meta-item:nth-child(odd) { border-right: 1px solid #fbcfe8; }
+        .meta-item:nth-last-child(-n + 2) { border-bottom: 0; }
         .meta-label { color: #db2777; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-        .meta-value { font-weight: 600; margin-top: 2px; }
+        .meta-value { color: #334155; font-weight: 600; line-height: 1.45; margin-top: 3px; overflow-wrap: anywhere; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         thead tr { background: #fce7f3; }
         thead th { padding: 9px 10px; border: 1px solid #f9a8d4; font-weight: 700; color: #be185d; }
@@ -107,10 +118,10 @@ export default function AdminRequisitionsPage() {
       <h1>ใบเบิกสินค้า Aemori</h1>
       <p class="sub">Supply Requisition Form</p>
       <div class="meta">
-        <div><div class="meta-label">สาขา</div><div class="meta-value">${req.branch_name}</div></div>
-        <div><div class="meta-label">ผู้เบิก</div><div class="meta-value">${req.requester_name}</div></div>
-        <div><div class="meta-label">วันที่</div><div class="meta-value">${dateStr}</div></div>
-        <div><div class="meta-label">เวลา</div><div class="meta-value">${timeStr} น.</div></div>
+        <div class="meta-item"><div class="meta-label">สาขา</div><div class="meta-value">${req.branch_name}</div></div>
+        <div class="meta-item"><div class="meta-label">ผู้เบิก</div><div class="meta-value">${req.requester_name}</div></div>
+        <div class="meta-item"><div class="meta-label">วันที่ขอเบิก</div><div class="meta-value">${requestedAtStr}</div></div>
+        <div class="meta-item"><div class="meta-label">วันที่อนุมัติ</div><div class="meta-value">${approvedAtStr}</div></div>
       </div>
       <table>
         <thead><tr>
@@ -158,7 +169,7 @@ export default function AdminRequisitionsPage() {
 
     let query = supabase
       .from('requisitions')
-      .select('id, created_at, branch_name, requester_name, status', { count: 'exact' })
+      .select('id, created_at, approved_at, branch_name, requester_name, status', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, to);
 
@@ -169,8 +180,36 @@ export default function AdminRequisitionsPage() {
       );
     }
 
-    const { data, count, error } = await query;
-    if (error) console.error('Error fetching requisitions:', error);
+    let { data, count, error } = await query;
+
+    // Keep the admin page usable while the approved_at migration has not yet
+    // been applied. Once the column exists, the primary query above is used.
+    if (error?.code === '42703' && error.message.includes('approved_at')) {
+      let fallbackQuery = supabase
+        .from('requisitions')
+        .select('id, created_at, branch_name, requester_name, status', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (filterStatus !== 'all') fallbackQuery = fallbackQuery.eq('status', filterStatus);
+      if (searchTerm.trim()) {
+        fallbackQuery = fallbackQuery.or(
+          `branch_name.ilike.%${searchTerm.trim()}%,requester_name.ilike.%${searchTerm.trim()}%`,
+        );
+      }
+
+      const fallbackResult = await fallbackQuery;
+      data = fallbackResult.data?.map((req) => ({ ...req, approved_at: null })) ?? null;
+      count = fallbackResult.count;
+      error = fallbackResult.error;
+      setSchemaWarning('ฐานข้อมูลยังไม่มีคอลัมน์วันที่อนุมัติ กรุณารัน Supabase migration เพื่อเริ่มบันทึกข้อมูลนี้');
+    } else if (!error) {
+      setSchemaWarning('');
+    }
+
+    if (error) {
+      console.error(`Error fetching requisitions [${error.code}]: ${error.message}`);
+    }
     const requisitionRows = data ?? [];
     const ids = requisitionRows.map((req) => req.id);
     const metrics = new Map<string, { itemCount: number; totalAmount: number }>();
@@ -442,6 +481,12 @@ export default function AdminRequisitionsPage() {
         {/* Navbar */}
         <AdminNav />
 
+        {schemaWarning && (
+          <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+            ⚠️ {schemaWarning}
+          </div>
+        )}
+
         {/* Page Header */}
         <div className="bg-white p-5 rounded-2xl shadow-sm shadow-pink-100/50 border border-pink-100 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -536,6 +581,12 @@ export default function AdminRequisitionsPage() {
                         </div>
                         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-bold text-slate-500">
                           <span>🕒 {new Date(req.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
+                          {req.approved_at && (
+                            <span className="text-emerald-600">
+                              ✅ อนุมัติ {new Date(req.approved_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {' '}{new Date(req.approved_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
                           <span>📦 {req.item_count ?? 0} รายการ</span>
                           <span>💰 {(req.total_amount ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</span>
                           {pendingAge >= 1 && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">ค้าง {pendingAge} วัน</span>}
@@ -596,6 +647,12 @@ export default function AdminRequisitionsPage() {
                               <p className="truncate font-black text-slate-800">{req.branch_name}</p>
                               <p className="mt-0.5 truncate text-xs font-semibold text-slate-600">ผู้เบิก: {req.requester_name}</p>
                               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                                {req.approved_at && (
+                                  <span className="text-emerald-600">
+                                    ✅ อนุมัติ {new Date(req.approved_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    {' '}{new Date(req.approved_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
                                 <span>📦 {req.item_count ?? 0} รายการ</span>
                                 <span>💰 {(req.total_amount ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</span>
                                 {pendingAge >= 1 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">ค้าง {pendingAge} วัน</span>}
@@ -717,7 +774,7 @@ export default function AdminRequisitionsPage() {
                       <p className="font-bold text-slate-700 mt-1">{selectedReq.branch_name}</p>
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-pink-400 uppercase tracking-wider">วันที่</p>
+                      <p className="text-xs font-bold text-pink-400 uppercase tracking-wider">วันที่ขอเบิก</p>
                       <p className="font-bold text-slate-700 mt-1">
                         {new Date(selectedReq.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
                       </p>
@@ -727,6 +784,16 @@ export default function AdminRequisitionsPage() {
                       <div className="mt-1">{getStatusBadge(selectedReq.status)}</div>
                     </div>
                   </div>
+                  {selectedReq.approved_at && (
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                      <span>✅</span>
+                      <span>
+                        อนุมัติเมื่อ {new Date(selectedReq.approved_at).toLocaleString('th-TH', {
+                          day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                        })} น.
+                      </span>
+                    </div>
+                  )}
 
                   {/* Item-level rejection notice */}
                   {rejectedCount_detail > 0 && (
