@@ -129,7 +129,7 @@ export default function AdminRequisitionsPage() {
           <th>รายการสินค้า</th>
           <th style="width:10%;text-align:center;">จำนวน</th>
           <th style="width:10%;text-align:center;">หน่วย</th>
-          <th style="width:14%;text-align:right;">ราคา/หน่วย (฿)</th>
+          <th style="width:18%;text-align:right;white-space:nowrap;">ราคา/หน่วย (฿)</th>
           <th style="width:20%;">หมายเหตุ</th>
         </tr></thead>
         <tbody>${rows}</tbody>
