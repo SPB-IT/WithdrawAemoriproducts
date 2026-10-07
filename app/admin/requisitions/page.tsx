@@ -28,7 +28,57 @@ interface RequisitionDetail {
   } | null;
 }
 
+interface PreviewImage {
+  src: string;
+  name: string;
+}
+
 const PAGE_SIZE = 20;
+
+// ── รูปย่อสินค้า (มี fallback เมื่อไม่มีรูป/โหลดไม่ขึ้น) ─────────────────────
+function ProductThumb({
+  src,
+  name,
+  dim,
+  onPreview,
+}: {
+  src: string | null | undefined;
+  name: string;
+  dim?: boolean;
+  onPreview: (img: PreviewImage) => void;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return (
+      <div
+        className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-pink-100 bg-pink-50 text-xl ${dim ? 'opacity-40' : ''}`}
+        aria-hidden="true"
+      >
+        📦
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview({ src, name })}
+      title="กดเพื่อดูรูปขยาย"
+      aria-label={`ดูรูป ${name}`}
+      className={`group relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-pink-100 bg-white shadow-sm transition-all hover:border-pink-300 hover:shadow-md active:scale-95 ${dim ? 'opacity-40 grayscale' : ''}`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={name}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-cover transition-transform group-hover:scale-110"
+      />
+    </button>
+  );
+}
 
 export default function AdminRequisitionsPage() {
   const [requisitions, setRequisitions]     = useState<Requisition[]>([]);
@@ -56,6 +106,9 @@ export default function AdminRequisitionsPage() {
   const [rejectReason, setRejectReason]       = useState('');
   const [savingReject, setSavingReject]       = useState(false);
   const [savingApproval, setSavingApproval]   = useState(false);
+
+  // Image preview (lightbox)
+  const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null);
 
   // Print
   const printRef = useRef<HTMLDivElement>(null);
@@ -242,6 +295,16 @@ export default function AdminRequisitionsPage() {
 
   useEffect(() => { fetchRequisitions(currentPage); }, [currentPage, filterStatus, searchTerm]);
   useEffect(() => { fetchCounts(); }, []);
+
+  // ปิดรูปขยายด้วยปุ่ม Esc
+  useEffect(() => {
+    if (!previewImage) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewImage(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [previewImage]);
 
   const handleFilterChange = (s: typeof filterStatus) => { setFilterStatus(s); setCurrentPage(1); };
   const handleSearchChange = (v: string) => { setSearchTerm(v); setCurrentPage(1); };
@@ -808,7 +871,7 @@ export default function AdminRequisitionsPage() {
                   {modalMode === 'review' && (
                     <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-xs font-semibold leading-relaxed text-blue-600">
                       <span className="mt-0.5">ℹ️</span>
-                      <p>ปรับจำนวนที่จะจัดส่งได้ก่อนอนุมัติ ยอดรวมด้านล่างจะคำนวณใหม่ทันที</p>
+                      <p>ปรับจำนวนที่จะจัดส่งได้ก่อนอนุมัติ ยอดรวมด้านล่างจะคำนวณใหม่ทันที · กดที่รูปสินค้าเพื่อดูรูปขยาย</p>
                     </div>
                   )}
 
@@ -830,18 +893,28 @@ export default function AdminRequisitionsPage() {
                         const isRejected = !!d.rejection_reason;
                         return (
                           <tr key={d.id} className={`transition-colors ${isRejected ? 'bg-rose-50/60' : 'hover:bg-pink-50/50'}`}>
-                            <td className="px-4 py-3.5">
-                              <p className={`font-semibold ${isRejected ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                                {d.items?.name}
-                              </p>
-                              {isRejected && (
-                                <div className="flex items-start gap-1 mt-1">
-                                  <span className="text-rose-400 text-xs mt-px">⛔</span>
-                                  <p className="text-xs text-rose-500 font-semibold leading-tight">
-                                    {d.rejection_reason}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <ProductThumb
+                                  src={d.items?.image_url}
+                                  name={d.items?.name ?? 'สินค้า'}
+                                  dim={isRejected}
+                                  onPreview={setPreviewImage}
+                                />
+                                <div className="min-w-0">
+                                  <p className={`font-semibold ${isRejected ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                    {d.items?.name}
                                   </p>
+                                  {isRejected && (
+                                    <div className="flex items-start gap-1 mt-1">
+                                      <span className="text-rose-400 text-xs mt-px">⛔</span>
+                                      <p className="text-xs text-rose-500 font-semibold leading-tight">
+                                        {d.rejection_reason}
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
+                              </div>
                             </td>
                             <td className={`px-3 py-3.5 text-center font-black ${isRejected ? 'text-slate-300 line-through' : 'text-pink-600'}`}>
                               {modalMode === 'review' && !isRejected ? (
@@ -1018,6 +1091,42 @@ export default function AdminRequisitionsPage() {
                 {savingReject ? 'กำลังบันทึก...' : '⛔ ยืนยันปฏิเสธ'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Image Preview (Lightbox) ── */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`รูป ${previewImage.name}`}
+        >
+          <div
+            className="relative flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/50 text-xl font-bold text-white transition-all hover:bg-slate-900/70"
+              aria-label="ปิดรูป"
+            >
+              ×
+            </button>
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-50">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewImage.src}
+                alt={previewImage.name}
+                className="max-h-[70vh] w-full object-contain"
+              />
+            </div>
+            <p className="border-t border-pink-100 px-5 py-3 text-center text-sm font-bold text-slate-700">
+              {previewImage.name}
+            </p>
           </div>
         </div>
       )}
