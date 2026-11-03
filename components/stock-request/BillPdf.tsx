@@ -55,7 +55,7 @@ function BillPages({ bill }: { bill: BillDetail }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>ใบรายการเบิกสินค้า (แจ้งสินค้าใกล้หมด)</Text>
-          <Text style={styles.muted}>Aemori · สำเพ็งบุรีรัมย์</Text>
+          <Text style={styles.muted}>Aemori</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={{ fontWeight: 'bold', fontSize: 15 }}>{bill.bill_no}</Text>
@@ -134,7 +134,7 @@ function PickingSheetPage({ bill }: { bill: BillDetail }) {
           <Image src="/logo.png" style={styles.logo} />
           <View>
             <Text style={styles.title}>ใบจัดสินค้า</Text>
-            <Text style={styles.muted}>ระบบแจ้งสินค้าใกล้หมด · Aemori สำเพ็งบุรีรัมย์</Text>
+            <Text style={styles.muted}>ระบบแจ้งสินค้าใกล้หมด · Aemori</Text>
           </View>
         </View>
         <View style={{ alignItems: 'flex-end' }}>

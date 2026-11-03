@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
     sameSite: 'strict',
     secure: process.env.NODE_ENV === 'production',
     maxAge: ADMIN_SESSION_SECONDS,
-    path: '/admin',
+    // ใช้ได้ทั้งเว็บ: /admin และฝั่งสาขาของระบบแจ้งสินค้าใกล้หมดช่วงโหมดทดสอบ (proxy.ts)
+    path: '/',
   });
   return response;
 }

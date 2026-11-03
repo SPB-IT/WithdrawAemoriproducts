@@ -28,9 +28,9 @@ export default function AdminAccessPage() {
       }
       const params = new URLSearchParams(window.location.search);
       const requestedPath = params.get('returnTo');
-      const destination = requestedPath?.startsWith('/admin/') && requestedPath !== '/admin/access'
-        ? requestedPath
-        : '/admin';
+      // กลับไปหน้าที่ขอไว้: หลังบ้าน หรือฝั่งสาขาระบบแจ้งสินค้าใกล้หมด (ช่วงโหมดทดสอบ)
+      const allowed = (requestedPath?.startsWith('/admin/') && requestedPath !== '/admin/access') || requestedPath?.startsWith('/stock-request');
+      const destination = allowed && requestedPath ? requestedPath : '/admin';
       window.location.replace(destination);
     } catch {
       setError('เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่');

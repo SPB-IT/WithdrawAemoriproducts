@@ -58,8 +58,8 @@ export default function BranchShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-[#fdf4f7] pb-16 text-slate-800">
       {/* หัวหน้าแบบเดียวกับระบบเบิกสินค้า */}
       <header className="sticky top-0 z-30 px-3 pt-3 sm:px-4">
-        <div className="relative mx-auto max-w-3xl overflow-hidden rounded-2xl border border-pink-100/80 bg-white/95 shadow-sm backdrop-blur">
-          <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-pink-400 via-rose-400 to-pink-500" />
+        <div className="relative mx-auto max-w-3xl rounded-2xl border border-pink-100/80 bg-white/95 shadow-sm backdrop-blur">
+          <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-linear-to-r from-pink-400 via-rose-400 to-pink-500" />
           <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
             <div className="flex min-w-0 items-center gap-3">
               <Link href="/" className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-pink-100 bg-pink-50 shadow-inner" aria-label="หน้าหลัก">
@@ -75,7 +75,7 @@ export default function BranchShell({ children }: { children: ReactNode }) {
                 )}
               </div>
             </div>
-            {context && <NotificationBell endpoint="/api/stock-request/branch/notifications" onOpenBill={() => router.push('/stock-request/history')} />}
+            {context && <NotificationBell endpoint="/api/stock-request/branch/notifications" />}
           </div>
           <nav className="mx-4 mb-3 grid grid-cols-2 gap-1 rounded-xl border border-pink-100/80 bg-pink-50 p-1">
             {tabs.map((tab) => {
