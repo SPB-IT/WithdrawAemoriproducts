@@ -1,0 +1,571 @@
+'use client';
+
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { AuditList, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
+import CameraCapture from '@/components/stock-request/CameraCapture';
+import {
+  ConfirmDialog,
+  EmptyState,
+  ErrorState,
+  Field,
+  InlineError,
+  LoadingState,
+  Modal,
+  PhotoThumb,
+  Spinner,
+  StatusBadge,
+  inputClass,
+  primaryButton,
+  secondaryButton,
+} from '@/components/stock-request/ui';
+import { ClientApiError, apiFetch, errorMessage, formatDateTime, formatNumber, uploadPhoto } from '@/lib/stock-request/client';
+import type { BillDetail, BillItemDetail } from '@/lib/stock-request/types';
+
+type Dialog =
+  | { kind: 'add' }
+  | { kind: 'edit'; item: BillItemDetail }
+  | { kind: 'sub'; item: BillItemDetail }
+  | { kind: 'clear-sub'; item: BillItemDetail }
+  | { kind: 'remove'; item: BillItemDetail; removed: boolean }
+  | { kind: 'ship' }
+  | null;
+
+export default function HqBillDetailPage() {
+  const { billId } = useParams<{ billId: string }>();
+  const [bill, setBill] = useState<BillDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | 'sheet' | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ bill: BillDetail }>(`/admin/stock-request/api/bills/${billId}`);
+      setBill(data.bill);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, [billId]);
+
+  useEffect(() => {
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  /** เรียก API ที่แก้ไขบิล — ถ้าเวอร์ชันชนกัน (มีคนแก้ก่อน) จะโหลดข้อมูลใหม่ให้อัตโนมัติ */
+  const mutate = useCallback(
+    async (url: string, method: string, json: Record<string, unknown>, success: string) => {
+      if (!bill) return;
+      try {
+        await apiFetch(url, { method, json: { ...json, expectedVersion: bill.version } });
+        setNotice({ tone: 'ok', text: success });
+        setDialog(null);
+        await load();
+      } catch (err) {
+        if (err instanceof ClientApiError && err.code === 'SR_VERSION_CONFLICT') {
+          setDialog(null);
+          setNotice({ tone: 'warn', text: 'บิลนี้มีการเปลี่ยนแปลงล่าสุด (สาขาเพิ่มรายการหรือผู้ดูแลอื่นแก้ไข) ระบบโหลดข้อมูลใหม่แล้ว กรุณาตรวจอีกครั้ง' });
+          await load();
+          return;
+        }
+        throw err;
+      }
+    },
+    [bill, load],
+  );
+
+  const runExport = async (kind: 'excel' | 'pdf' | 'sheet') => {
+    if (!bill) return;
+    // เปิดแท็บไว้ก่อนทันทีที่กด (ก่อน await) ไม่ให้เบราว์เซอร์บล็อก popup
+    const target = kind === 'sheet' ? window.open('', '_blank') : null;
+    setExporting(kind);
+    try {
+      const name = `${bill.bill_no}-${bill.branch_name}`;
+      if (kind === 'sheet') {
+        const { openPickingSheetPdf } = await import('@/components/stock-request/BillPdf');
+        await openPickingSheetPdf(bill, target);
+      } else if (kind === 'excel') {
+        const { exportBillsExcel } = await import('@/lib/stock-request/export-excel');
+        await exportBillsExcel([bill], name);
+      } else {
+        const { exportBillsPdf } = await import('@/components/stock-request/BillPdf');
+        await exportBillsPdf([bill], name);
+      }
+    } catch (err) {
+      target?.close();
+      setNotice({ tone: 'warn', text: `ส่งออกไม่สำเร็จ: ${errorMessage(err)}` });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const itemNames = useMemo(() => new Map((bill?.items ?? []).map((item) => [item.id, item.product_name])), [bill]);
+
+  if (error && !bill) return <ErrorState message={error} onRetry={load} />;
+  if (!bill) return <LoadingState />;
+
+  const active = bill.items.filter((item) => !item.is_removed);
+  const removed = bill.items.filter((item) => item.is_removed);
+  const afterBilling = bill.status !== 'pending';
+
+  return (
+    <div className="space-y-5">
+      <Link href="/admin/stock-request/bills" className="text-xs font-bold text-slate-500 hover:text-pink-600">
+        ← บิลทุกสาขา
+      </Link>
+
+      <section className="rounded-2xl border border-pink-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold text-pink-600">{bill.branch_name}</p>
+            <h1 className="font-mono text-2xl font-black">{bill.bill_no}</h1>
+            <p className="text-xs text-slate-500">
+              สร้างเมื่อ {formatDateTime(bill.created_at)} · {active.length} รายการ
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <StatusBadge status={bill.status} />
+            <div className="flex flex-wrap justify-end gap-2">
+              {bill.status === 'pending' && (
+                <Link href={`/admin/stock-request/bills/${bill.id}/review`} className={`${primaryButton} ${active.length === 0 ? 'pointer-events-none opacity-50' : ''}`}>
+                  ✂️ ตรวจและตัดบิล
+                </Link>
+              )}
+              {bill.status === 'billed' && (
+                <button type="button" onClick={() => setDialog({ kind: 'ship' })} className={`${primaryButton}`}>
+                  🚚 ยืนยันจัดส่งแล้ว
+                </button>
+              )}
+              <button type="button" className={secondaryButton} disabled={exporting !== null} onClick={() => runExport('sheet')}>
+                {exporting === 'sheet' ? <Spinner className="h-4 w-4" /> : '🧾'} ใบจัดสินค้า A4
+              </button>
+              <button type="button" className={secondaryButton} disabled={exporting !== null} onClick={() => runExport('excel')}>
+                {exporting === 'excel' ? <Spinner className="h-4 w-4" /> : '📗'} Excel
+              </button>
+              <button type="button" className={secondaryButton} disabled={exporting !== null} onClick={() => runExport('pdf')}>
+                {exporting === 'pdf' ? <Spinner className="h-4 w-4" /> : '📕'} PDF
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="mt-5">
+          <StatusTimeline bill={bill} />
+        </div>
+        {afterBilling && (
+          <p className="mt-4 rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+            บิลนี้ตัดแล้ว — การแก้ไขทุกครั้งต้องระบุเหตุผลและถูกบันทึกในประวัติ บิลจะไม่กลับไปเปิดรับรายการจากสาขาอีก
+          </p>
+        )}
+      </section>
+
+      {notice && (
+        <div className={`flex items-start justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold ring-1 ${notice.tone === 'ok' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-amber-50 text-amber-800 ring-amber-200'}`}>
+          <span>{notice.text}</span>
+          <button type="button" onClick={() => setNotice(null)} className="text-xs opacity-60 hover:opacity-100">
+            ✕
+          </button>
+        </div>
+      )}
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-black">รายการสินค้า</h2>
+          <button type="button" onClick={() => setDialog({ kind: 'add' })} className={secondaryButton}>
+            ➕ เพิ่มสินค้า
+          </button>
+        </div>
+        {active.length === 0 ? (
+          <EmptyState icon="🧺" title="ยังไม่มีรายการในบิลนี้" />
+        ) : (
+          <ul className="space-y-3">
+            {active.map((item, index) => (
+              <ItemRow key={item.id} index={index} item={item} bill={bill} onAction={setDialog} mutate={mutate} />
+            ))}
+          </ul>
+        )}
+        {removed.length > 0 && (
+          <details className="rounded-2xl border border-pink-100 bg-white p-4">
+            <summary className="cursor-pointer text-sm font-bold text-slate-500">รายการที่ถูกนำออก ({removed.length})</summary>
+            <ul className="mt-3 space-y-2">
+              {removed.map((item) => (
+                <li key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                  <span className="text-slate-400 line-through">
+                    {item.product_name} ({item.product_code})
+                  </span>
+                  <button type="button" onClick={() => setDialog({ kind: 'remove', item, removed: false })} className="text-xs font-bold text-pink-600 hover:underline">
+                    นำกลับ
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+        <h2 className="mb-3 text-base font-black">ประวัติการแก้ไข (Audit Log)</h2>
+        <AuditList logs={bill.audit_logs} itemNames={itemNames} />
+      </section>
+
+      <ItemFormModal dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
+      <SubstitutionModal dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
+      <ReasonConfirm dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
+    </div>
+  );
+}
+
+type Mutate = (url: string, method: string, json: Record<string, unknown>, success: string) => Promise<void>;
+
+function ItemRow({ item, index, bill, onAction, mutate }: { item: BillItemDetail; index: number; bill: BillDetail; onAction: (dialog: Dialog) => void; mutate: Mutate }) {
+  const [shipQty, setShipQty] = useState(item.hq_ship_qty?.toString() ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pending = bill.status === 'pending';
+  const dirty = shipQty !== (item.hq_ship_qty?.toString() ?? '');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShipQty(item.hq_ship_qty?.toString() ?? ''), 0);
+    return () => clearTimeout(timer);
+  }, [item.hq_ship_qty]);
+
+  const saveShip = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await mutate(`/admin/stock-request/api/items/${item.id}`, 'PATCH', { patch: { hqShipQty: shipQty === '' ? null : Number(shipQty) } }, `บันทึกจำนวนจัดส่ง “${item.product_name}” แล้ว`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-4 md:flex-row">
+        <div className="flex flex-1 gap-3">
+          <span className="mt-1 w-6 shrink-0 text-center text-xs font-black text-slate-400">{index + 1}</span>
+          <PhotoThumb url={item.photo_url} alt={item.product_name} className="h-24 w-24" />
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="text-base font-bold text-slate-800">{item.product_name}</p>
+            <p className="text-xs text-slate-500">รหัส {item.product_code}</p>
+            <p className="mt-1">
+              คงเหลือหน้าร้าน (สาขาระบุ): <b className="text-pink-700">{formatNumber(item.stock_on_hand)}</b>
+            </p>
+            {item.staff_note && <p className="mt-1 text-xs text-slate-600">📝 สาขา: {item.staff_note}</p>}
+            {item.hq_note && <p className="mt-1 text-xs text-sky-700">💬 HQ: {item.hq_note}</p>}
+            <p className="mt-1 text-[11px] text-slate-400">
+              {item.source === 'hq' ? `HQ เพิ่มโดย ${item.reported_by_name}` : `ลงรายการโดย ${item.reported_by_name}`} · {formatDateTime(item.created_at)}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 md:w-56">
+          <label className="text-xs font-bold text-slate-600">
+            จำนวนที่ HQ จะจัดส่ง
+            <div className="mt-1 flex gap-1.5">
+              <input
+                value={shipQty}
+                onChange={(event) => setShipQty(event.target.value.replace(/[^0-9]/g, ''))}
+                inputMode="numeric"
+                placeholder="-"
+                disabled={!pending || saving || Boolean(item.substitution)}
+                className={`${inputClass} text-center font-bold`}
+                aria-label={`จำนวนจัดส่ง ${item.product_name}`}
+              />
+              {pending && dirty && (
+                <button type="button" onClick={saveShip} disabled={saving} className="rounded-xl bg-pink-500 px-3 text-sm font-black text-white disabled:opacity-50">
+                  {saving ? <Spinner className="h-4 w-4" /> : '✓'}
+                </button>
+              )}
+            </div>
+          </label>
+          {item.substitution && <p className="text-[11px] text-pink-600">ใช้จำนวนของสินค้าทดแทน</p>}
+          {!pending && !item.substitution && <p className="text-[11px] text-slate-400">บิลตัดแล้ว แก้ผ่านปุ่ม “แก้ไข” พร้อมเหตุผล</p>}
+          <InlineError message={error} />
+          <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
+            <button type="button" onClick={() => onAction({ kind: 'edit', item })} className="rounded-lg bg-slate-100 px-2 py-2 text-slate-700 hover:bg-slate-200">
+              แก้ไข
+            </button>
+            <button type="button" onClick={() => onAction({ kind: 'sub', item })} className="rounded-lg bg-pink-50 px-2 py-2 text-pink-700 hover:bg-pink-100">
+              ทดแทน
+            </button>
+            <button type="button" onClick={() => onAction({ kind: 'remove', item, removed: true })} className="rounded-lg bg-rose-50 px-2 py-2 text-rose-600 hover:bg-rose-100">
+              ลบ
+            </button>
+          </div>
+          {item.substitution && (
+            <button type="button" onClick={() => onAction({ kind: 'clear-sub', item })} className="text-[11px] font-bold text-slate-400 hover:text-rose-600">
+              ยกเลิกสินค้าทดแทน
+            </button>
+          )}
+        </div>
+      </div>
+      <SubstitutionPair item={item} />
+      {item.substitution_history.length > 1 && (
+        <details className="mt-2 text-xs text-slate-500">
+          <summary className="cursor-pointer font-bold">ประวัติสินค้าทดแทน ({item.substitution_history.length})</summary>
+          <ul className="mt-1 space-y-1">
+            {item.substitution_history.map((sub) => (
+              <li key={sub.id} className={sub.is_active ? 'font-bold text-pink-700' : 'line-through'}>
+                {sub.product_name} ({sub.product_code}) × {sub.ship_qty} — {sub.reason} · {sub.created_by_name ?? ''} {formatDateTime(sub.created_at)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </li>
+  );
+}
+
+function ReasonField({ required, value, onChange }: { required: boolean; value: string; onChange: (value: string) => void }) {
+  return (
+    <Field label={required ? 'เหตุผลในการแก้ไข' : 'เหตุผล / หมายเหตุ (ไม่บังคับ)'} required={required} hint={required ? 'บิลตัดแล้ว ต้องระบุเหตุผลทุกครั้ง จะแสดงให้สาขาเห็นในประวัติ' : undefined}>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} className={`${inputClass} min-h-16`} maxLength={1000} />
+    </Field>
+  );
+}
+
+function ModalFooter({ busy, onClose, label }: { busy: boolean; onClose: () => void; label: string }) {
+  return (
+    <div className="flex justify-end gap-2">
+      <button type="button" onClick={onClose} disabled={busy} className={secondaryButton}>
+        ยกเลิก
+      </button>
+      <button type="submit" form="hq-dialog-form" disabled={busy} className={`${primaryButton}`}>
+        {busy && <Spinner className="h-4 w-4" />}
+        {label}
+      </button>
+    </div>
+  );
+}
+
+function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill: BillDetail; onClose: () => void; mutate: Mutate }) {
+  const open = dialog?.kind === 'add' || dialog?.kind === 'edit';
+  const item = dialog?.kind === 'edit' ? dialog.item : null;
+  const [form, setForm] = useState({ name: '', code: '', stock: '', ship: '', note: '', reason: '' });
+  const [photo, setPhoto] = useState<Blob | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const needsReason = bill.status !== 'pending';
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      setForm({
+        name: item?.product_name ?? '',
+        code: item?.product_code ?? '',
+        stock: item?.stock_on_hand?.toString() ?? '',
+        ship: item?.hq_ship_qty?.toString() ?? '',
+        note: item?.hq_note ?? '',
+        reason: '',
+      });
+      setPhoto(null);
+      setError(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [open, item]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!form.name.trim() || !form.code.trim()) return setError('กรุณากรอกชื่อและรหัสสินค้า');
+    if (needsReason && !form.reason.trim()) return setError('กรุณาระบุเหตุผลในการแก้ไข');
+    const num = (value: string) => (value === '' ? null : Number(value));
+    setBusy(true);
+    setError(null);
+    try {
+      if (item) {
+        const patch: Record<string, unknown> = {};
+        if (form.name.trim() !== item.product_name) patch.productName = form.name.trim();
+        if (form.code.trim() !== item.product_code) patch.productCode = form.code.trim();
+        if (num(form.stock) !== item.stock_on_hand) patch.stockOnHand = num(form.stock);
+        if (num(form.ship) !== item.hq_ship_qty) patch.hqShipQty = num(form.ship);
+        if ((form.note.trim() || null) !== item.hq_note) patch.hqNote = form.note.trim() || null;
+        if (Object.keys(patch).length === 0) {
+          onClose();
+          return;
+        }
+        await mutate(`/admin/stock-request/api/items/${item.id}`, 'PATCH', { patch, reason: form.reason.trim() || null }, `แก้ไข “${form.name.trim()}” แล้ว`);
+      } else {
+        const photoPath = photo ? await uploadPhoto('/admin/stock-request/api/upload-url', photo, { billId: bill.id }) : null;
+        await mutate(
+          `/admin/stock-request/api/bills/${bill.id}/items`,
+          'POST',
+          { productName: form.name.trim(), productCode: form.code.trim(), stockOnHand: num(form.stock), hqShipQty: num(form.ship), hqNote: form.note.trim() || null, photoPath, reason: form.reason.trim() || null },
+          `เพิ่ม “${form.name.trim()}” แล้ว`,
+        );
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const numeric = (value: string) => value.replace(/[^0-9]/g, '');
+
+  return (
+    <Modal open={open} onClose={busy ? () => undefined : onClose} title={item ? 'แก้ไขรายการสินค้า' : 'เพิ่มสินค้าเข้าบิล'} footer={<ModalFooter busy={busy} onClose={onClose} label="บันทึก" />}>
+      <form id="hq-dialog-form" onSubmit={submit} className="space-y-3">
+        {!item && (
+          <Field label="รูปสินค้า (ไม่บังคับ)">
+            <CameraCapture value={photo} onChange={setPhoto} />
+          </Field>
+        )}
+        <Field label="ชื่อสินค้า" required>
+          <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} maxLength={200} />
+        </Field>
+        <Field label="รหัสสินค้า" required>
+          <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={inputClass} maxLength={100} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="คงเหลือหน้าร้าน (สาขา)" hint="ข้อมูลจากสาขา แก้เมื่อจำเป็นเท่านั้น">
+            <input value={form.stock} onChange={(event) => setForm({ ...form, stock: numeric(event.target.value) })} className={inputClass} inputMode="numeric" />
+          </Field>
+          <Field label="จำนวนที่ HQ จะจัดส่ง">
+            <input value={form.ship} onChange={(event) => setForm({ ...form, ship: numeric(event.target.value) })} className={inputClass} inputMode="numeric" />
+          </Field>
+        </div>
+        <Field label="หมายเหตุ HQ">
+          <textarea value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} className={`${inputClass} min-h-16`} maxLength={1000} />
+        </Field>
+        <ReasonField required={needsReason} value={form.reason} onChange={(reason) => setForm({ ...form, reason })} />
+        <InlineError message={error} />
+      </form>
+    </Modal>
+  );
+}
+
+function SubstitutionModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill: BillDetail; onClose: () => void; mutate: Mutate }) {
+  const item = dialog?.kind === 'sub' ? dialog.item : null;
+  const [form, setForm] = useState({ name: '', code: '', qty: '', reason: '' });
+  const [photo, setPhoto] = useState<Blob | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!item) return;
+    const timer = setTimeout(() => {
+      setForm({ name: '', code: '', qty: item.hq_ship_qty?.toString() ?? '', reason: '' });
+      setPhoto(null);
+      setError(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [item]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!item) return;
+    if (!form.name.trim() || !form.code.trim()) return setError('กรุณากรอกชื่อและรหัสสินค้าทดแทน');
+    if (form.qty === '') return setError('กรุณากรอกจำนวนที่จัดส่ง');
+    if (!form.reason.trim()) return setError('กรุณาระบุเหตุผลในการเปลี่ยนสินค้า');
+    setBusy(true);
+    setError(null);
+    try {
+      const photoPath = photo ? await uploadPhoto('/admin/stock-request/api/upload-url', photo, { billId: bill.id }) : null;
+      await mutate(
+        `/admin/stock-request/api/items/${item.id}/substitution`,
+        'POST',
+        { productName: form.name.trim(), productCode: form.code.trim(), shipQty: Number(form.qty), reason: form.reason.trim(), photoPath },
+        `กำหนดสินค้าทดแทนให้ “${item.product_name}” แล้ว`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={Boolean(item)} onClose={busy ? () => undefined : onClose} title="กำหนดสินค้าทดแทน" size="lg" footer={<ModalFooter busy={busy} onClose={onClose} label="บันทึกสินค้าทดแทน" />}>
+      {item && (
+        <form id="hq-dialog-form" onSubmit={submit} className="space-y-4">
+          <div className="flex gap-3 rounded-xl bg-slate-50 p-3">
+            <PhotoThumb url={item.photo_url} alt={item.product_name} className="h-16 w-16" />
+            <div className="text-sm">
+              <p className="text-xs font-bold text-slate-400">สินค้าเดิม (เก็บไว้ ไม่ถูกลบ)</p>
+              <p className="font-bold">{item.product_name}</p>
+              <p className="text-xs text-slate-500">
+                รหัส {item.product_code} · คงเหลือที่สาขาระบุ {formatNumber(item.stock_on_hand)}
+              </p>
+            </div>
+          </div>
+          {item.substitution && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">มีสินค้าทดแทนอยู่แล้ว ({item.substitution.product_name}) — รายการใหม่จะแทนที่ และเก็บรายการเดิมไว้ในประวัติ</p>}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="ชื่อสินค้าทดแทน" required>
+              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} maxLength={200} />
+            </Field>
+            <Field label="รหัสสินค้าทดแทน" required>
+              <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={inputClass} maxLength={100} />
+            </Field>
+          </div>
+          <Field label="จำนวนที่จัดส่ง" required>
+            <input value={form.qty} onChange={(event) => setForm({ ...form, qty: event.target.value.replace(/[^0-9]/g, '') })} className={inputClass} inputMode="numeric" />
+          </Field>
+          <Field label="เหตุผลในการเปลี่ยนสินค้า" required>
+            <textarea value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-16`} maxLength={1000} placeholder="เช่น สินค้าเดิมหมดสต็อก" />
+          </Field>
+          <Field label="รูปสินค้าทดแทน (ไม่บังคับ)">
+            <CameraCapture value={photo} onChange={setPhoto} />
+          </Field>
+          <InlineError message={error} />
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+function ReasonConfirm({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill: BillDetail; onClose: () => void; mutate: Mutate }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const open = dialog?.kind === 'remove' || dialog?.kind === 'clear-sub' || dialog?.kind === 'ship';
+  const needsReason = bill.status !== 'pending' && dialog?.kind !== 'ship';
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      setReason('');
+      setError(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [open, dialog]);
+
+  if (!open || !dialog) return null;
+
+  const config =
+    dialog.kind === 'ship'
+      ? { title: 'ยืนยันจัดส่งสินค้า', message: `เปลี่ยนสถานะบิล ${bill.bill_no} เป็น “จัดส่งแล้ว” — สาขาจะได้รับแจ้งเตือนให้ยืนยันเมื่อได้รับสินค้า`, label: 'ยืนยันจัดส่ง', tone: 'primary' as const }
+      : dialog.kind === 'clear-sub'
+        ? { title: 'ยกเลิกสินค้าทดแทน', message: `ยกเลิกสินค้าทดแทนของ “${dialog.item.product_name}” (ประวัติยังถูกเก็บไว้)`, label: 'ยกเลิกสินค้าทดแทน', tone: 'danger' as const }
+        : dialog.removed
+          ? { title: 'ลบรายการสินค้า', message: `นำ “${dialog.item.product_name}” ออกจากบิล (ข้อมูลเดิมยังถูกเก็บในประวัติ นำกลับได้)`, label: 'ลบรายการ', tone: 'danger' as const }
+          : { title: 'นำรายการกลับ', message: `นำ “${dialog.item.product_name}” กลับเข้าบิล`, label: 'นำกลับ', tone: 'primary' as const };
+
+  const confirm = async () => {
+    if (needsReason && !reason.trim()) {
+      setError('กรุณาระบุเหตุผลในการแก้ไข');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (dialog.kind === 'ship') await mutate(`/admin/stock-request/api/bills/${bill.id}/ship`, 'POST', {}, `บิล ${bill.bill_no} เปลี่ยนเป็นจัดส่งแล้ว`);
+      else if (dialog.kind === 'clear-sub') await mutate(`/admin/stock-request/api/items/${dialog.item.id}/substitution`, 'DELETE', { reason: reason.trim() || null }, 'ยกเลิกสินค้าทดแทนแล้ว');
+      else await mutate(`/admin/stock-request/api/items/${dialog.item.id}/remove`, 'POST', { removed: dialog.removed, reason: reason.trim() || null }, dialog.removed ? 'ลบรายการแล้ว' : 'นำรายการกลับแล้ว');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ConfirmDialog open title={config.title} message={config.message} confirmLabel={config.label} tone={config.tone} busy={busy} onCancel={onClose} onConfirm={confirm}>
+      {dialog.kind !== 'ship' && <ReasonField required={needsReason} value={reason} onChange={setReason} />}
+      <InlineError message={error} />
+    </ConfirmDialog>
+  );
+}

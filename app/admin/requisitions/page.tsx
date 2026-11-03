@@ -113,93 +113,17 @@ export default function AdminRequisitionsPage() {
   // Print
   const printRef = useRef<HTMLDivElement>(null);
 
-  const handlePrint = (req: Requisition, detailList: RequisitionDetail[]) => {
-    const win = window.open('', '_blank', 'width=800,height=900');
-    if (!win) return;
-    const dateStr = new Date(req.created_at).toLocaleDateString('th-TH', {
-      day: 'numeric', month: 'long', year: 'numeric',
-    });
-    const timeStr = new Date(req.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-    const requestedAtStr = `${dateStr} เวลา ${timeStr} น.`;
-    const approvedAtStr = req.approved_at
-      ? `${new Date(req.approved_at).toLocaleString('th-TH', {
-          day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
-        })} น.`
-      : '-';
-    const rows = detailList.map((d, i) => {
-      const rejected = !!d.rejection_reason;
-      return `
-        <tr style="${rejected ? 'background:#fff5f5;color:#aaa;' : ''}">
-          <td style="padding:8px 10px;border:1px solid #f9a8d4;text-align:center;">${i + 1}</td>
-          <td style="padding:8px 10px;border:1px solid #f9a8d4;${rejected ? 'text-decoration:line-through;' : ''}">${d.items?.name ?? '-'}</td>
-          <td style="padding:8px 10px;border:1px solid #f9a8d4;text-align:center;">${rejected ? '<span style="color:#e11d48;font-weight:bold;">ยกเลิก</span>' : d.quantity}</td>
-          <td style="padding:8px 10px;border:1px solid #f9a8d4;text-align:center;">${d.items?.unit ?? '-'}</td>
-          <td style="padding:8px 10px;border:1px solid #f9a8d4;text-align:right;">${rejected ? '—' : (d.price_at_time || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
-          ${rejected ? `<td style="padding:8px 10px;border:1px solid #f9a8d4;color:#e11d48;font-size:12px;">⛔ ${d.rejection_reason}</td>` : '<td style="padding:8px 10px;border:1px solid #f9a8d4;"></td>'}
-        </tr>`;
-    }).join('');
-    const total = detailList
-      .filter(d => !d.rejection_reason)
-      .reduce((s, d) => s + (d.price_at_time || 0) * (d.quantity || 0), 0)
-      .toLocaleString('th-TH', { minimumFractionDigits: 2 });
-
-    win.document.write(`<!DOCTYPE html><html><head>
-      <meta charset="utf-8"/>
-      <title>ใบเบิกสินค้า - ${req.branch_name}</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
-        * { font-family: 'Sarabun', sans-serif; box-sizing: border-box; }
-        body { margin: 30px 40px; color: #1e293b; font-size: 14px; }
-        h1 { font-size: 20px; font-weight: 700; text-align: center; margin: 0 0 4px; }
-        .sub { text-align: center; color: #db2777; font-size: 13px; margin-bottom: 20px; }
-        .meta { display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; background: #fff7fa; border: 1px solid #fbcfe8; border-radius: 12px; margin-bottom: 20px; font-size: 13px; }
-        .meta-item { min-width: 0; min-height: 62px; padding: 12px 16px; border-bottom: 1px solid #fbcfe8; }
-        .meta-item:nth-child(odd) { border-right: 1px solid #fbcfe8; }
-        .meta-item:nth-last-child(-n + 2) { border-bottom: 0; }
-        .meta-label { color: #db2777; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-        .meta-value { color: #334155; font-weight: 600; line-height: 1.45; margin-top: 3px; overflow-wrap: anywhere; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        thead tr { background: #fce7f3; }
-        thead th { padding: 9px 10px; border: 1px solid #f9a8d4; font-weight: 700; color: #be185d; }
-        .total-row td { background: #db2777; color: white; font-weight: 700; padding: 9px 10px; border: 1px solid #be185d; }
-        .sig { display: flex; justify-content: space-between; margin-top: 50px; }
-        .sig-box { width: 42%; text-align: center; font-size: 13px; }
-        .sig-line { border-top: 1px dashed #94a3b8; margin: 40px 10px 6px; }
-        @media print { body { margin: 15px 20px; } }
-      </style>
-    </head><body>
-      <h1>ใบเบิกสินค้า Aemori</h1>
-      <p class="sub">Supply Requisition Form</p>
-      <div class="meta">
-        <div class="meta-item"><div class="meta-label">สาขา</div><div class="meta-value">${req.branch_name}</div></div>
-        <div class="meta-item"><div class="meta-label">ผู้เบิก</div><div class="meta-value">${req.requester_name}</div></div>
-        <div class="meta-item"><div class="meta-label">วันที่ขอเบิก</div><div class="meta-value">${requestedAtStr}</div></div>
-        <div class="meta-item"><div class="meta-label">วันที่อนุมัติ</div><div class="meta-value">${approvedAtStr}</div></div>
-      </div>
-      <table>
-        <thead><tr>
-          <th style="width:5%;text-align:center;">ลำดับ</th>
-          <th>รายการสินค้า</th>
-          <th style="width:10%;text-align:center;">จำนวน</th>
-          <th style="width:10%;text-align:center;">หน่วย</th>
-          <th style="width:18%;text-align:right;white-space:nowrap;">ราคา/หน่วย (฿)</th>
-          <th style="width:20%;">หมายเหตุ</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr class="total-row">
-          <td colspan="4" style="text-align:right;">รวมทั้งสิ้น</td>
-          <td style="text-align:right;">${total} ฿</td>
-          <td></td>
-        </tr></tfoot>
-      </table>
-      <div class="sig">
-        <div class="sig-box"><div class="sig-line"></div>ผู้เบิก<br/>(${req.requester_name})</div>
-        <div class="sig-box"><div class="sig-line"></div>ผู้จัดของ / ตรวจสอบ</div>
-        <div class="sig-box"><div class="sig-line"></div>ผู้อนุมัติ</div>
-      </div>
-      <script>window.onload = () => { window.print(); }<\/script>
-    </body></html>`);
-    win.document.close();
+  // ใบเบิกเป็นเอกสาร PDF เปิดในแท็บใหม่ (ดาวน์โหลด/พิมพ์ได้จากตัว PDF) — ไม่ได้พิมพ์หน้าเว็บ
+  const handlePrint = async (req: Requisition, detailList: RequisitionDetail[]) => {
+    const target = window.open('', '_blank'); // เปิดแท็บก่อน await กัน popup blocker
+    try {
+      const { openRequisitionPdf } = await import('@/components/requisition/RequisitionPdf');
+      await openRequisitionPdf(req, detailList, target);
+    } catch (error) {
+      target?.close();
+      console.error('[requisitions] pdf', error);
+      window.alert('สร้างเอกสาร PDF ไม่สำเร็จ กรุณาลองใหม่');
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));

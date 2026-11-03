@@ -30,7 +30,7 @@ export default function AdminAccessPage() {
       const requestedPath = params.get('returnTo');
       const destination = requestedPath?.startsWith('/admin/') && requestedPath !== '/admin/access'
         ? requestedPath
-        : '/admin/dashboard';
+        : '/admin';
       window.location.replace(destination);
     } catch {
       setError('เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่');

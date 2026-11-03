@@ -1,0 +1,30 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { requireBranchContext } from '@/lib/stock-request/branch-context';
+import { ApiError, handle } from '@/lib/stock-request/errors';
+import { assertPhotoUploaded, rpc } from '@/lib/stock-request/queries';
+import type { BillItemRow } from '@/lib/stock-request/types';
+import { optionalText, readJson, requireInt, requireText, requireUuid } from '@/lib/stock-request/validation';
+
+export const dynamic = 'force-dynamic';
+
+// สาขาเพิ่มรายการเข้าบิลที่เปิดอยู่ — บันทึกลงฐานข้อมูลทันที
+export const POST = handle(async (request: NextRequest) => {
+  const branch = await requireBranchContext(request);
+  const body = await readJson(request);
+
+  const photoPath = requireText(body.photoPath, 200, 'รูปสินค้า');
+  if (!photoPath.startsWith(`${branch.id}/`)) throw new ApiError(400, 'SR_INVALID_PHOTO', 'รูปภาพไม่ถูกต้อง');
+  await assertPhotoUploaded(photoPath);
+
+  const item = await rpc<BillItemRow>('add_branch_item', {
+    p_branch_id: branch.id,
+    p_item_id: requireUuid(body.itemId, 'รหัสรายการ'),
+    p_product_name: requireText(body.productName, 200, 'ชื่อสินค้า'),
+    p_product_code: requireText(body.productCode, 100, 'รหัสสินค้า'),
+    p_stock_on_hand: requireInt(body.stockOnHand, 'จำนวนคงเหลือ'),
+    p_staff_note: optionalText(body.staffNote, 1000),
+    p_photo_path: photoPath,
+    p_staff_name: requireText(body.staffName, 100, 'ชื่อผู้ลงรายการ'),
+  });
+  return NextResponse.json({ item });
+});

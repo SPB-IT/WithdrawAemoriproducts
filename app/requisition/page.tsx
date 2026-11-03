@@ -2,6 +2,30 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import BranchPicker from '@/components/requisition/BranchPicker';
+
+const BRANCH_STORAGE_KEY = 'aemori-requisition-branch';
+const REQUESTER_STORAGE_KEY = 'aemori-requisition-requesters';
+
+// ชื่อผู้เบิกที่เครื่องนี้เคยใช้ แยกตามสาขา (ล่าสุดก่อน)
+function readLocalRequesters(branch: string): string[] {
+  try {
+    const all = JSON.parse(window.localStorage.getItem(REQUESTER_STORAGE_KEY) ?? '{}') as Record<string, string[]>;
+    return Array.isArray(all[branch]) ? all[branch] : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalRequester(branch: string, name: string) {
+  try {
+    const all = JSON.parse(window.localStorage.getItem(REQUESTER_STORAGE_KEY) ?? '{}') as Record<string, string[]>;
+    all[branch] = [name, ...(all[branch] ?? []).filter((n) => n !== name)].slice(0, 8);
+    window.localStorage.setItem(REQUESTER_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // ไม่กระทบการเบิก
+  }
+}
 
 interface Item {
   id: string;
@@ -16,10 +40,11 @@ interface CartItem extends Item {
 
 interface CartFormContentProps {
   branchName: string;
-  setBranchName: (val: string) => void;
-  branches: { name: string }[];
+  onChangeBranch: () => void;
   requesterName: string;
   setRequesterName: (val: string) => void;
+  knownRequesters: string[];
+  formError: string | null;
   handlePreSubmitCheck: (e: React.FormEvent) => void;
   totalCartItems: number;
   cart: CartItem[];
@@ -31,10 +56,11 @@ interface CartFormContentProps {
 
 const CartFormContent = ({
   branchName,
-  setBranchName,
-  branches,
+  onChangeBranch,
   requesterName,
   setRequesterName,
+  knownRequesters,
+  formError,
   handlePreSubmitCheck,
   totalCartItems,
   cart,
@@ -50,18 +76,11 @@ const CartFormContent = ({
         <label className="block text-[10px] font-black text-pink-400 uppercase tracking-[0.15em] mb-1.5">
           สาขาที่ขอเบิก
         </label>
-        <div className="relative">
-          <select
-            value={branchName}
-            onChange={(e) => setBranchName(e.target.value)}
-            className="block w-full py-2.5 pl-3.5 pr-9 bg-white border border-slate-200 hover:border-pink-300 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/15 rounded-xl text-sm font-semibold text-slate-700 outline-none transition-all appearance-none cursor-pointer shadow-sm"
-          >
-            <option value="">— เลือกสาขา —</option>
-            {branches.map((b) => (
-              <option key={b.name} value={b.name}>{b.name}</option>
-            ))}
-          </select>
-          <span className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-pink-300 text-[10px]">▼</span>
+        <div className="flex items-center justify-between gap-2 py-2.5 px-3.5 bg-pink-50/60 border border-pink-100 rounded-xl">
+          <span className="text-sm font-bold text-slate-700 truncate">🏪 {branchName}</span>
+          <button type="button" onClick={onChangeBranch} className="shrink-0 text-xs font-black text-pink-500 hover:text-pink-600 hover:underline">
+            เปลี่ยน
+          </button>
         </div>
       </div>
 
@@ -77,6 +96,15 @@ const CartFormContent = ({
           placeholder="ชื่อ - นามสกุล"
           className="block w-full py-2.5 px-3.5 bg-white border border-slate-200 hover:border-pink-300 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/15 rounded-xl text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all shadow-sm"
         />
+        {knownRequesters.some((name) => name !== requesterName.trim()) && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {knownRequesters.filter((name) => name !== requesterName.trim()).map((name) => (
+              <button key={name} type="button" onClick={() => setRequesterName(name)} className="rounded-full bg-pink-50 px-3 py-1 text-xs font-bold text-pink-600 ring-1 ring-pink-100 transition hover:bg-pink-100">
+                👤 {name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Divider */}
@@ -132,6 +160,11 @@ const CartFormContent = ({
       </div>
     </div>
 
+    {/* ข้อความแจ้งเตือนในฟอร์ม (แทน alert) */}
+    {formError && (
+      <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm font-bold text-rose-600">⚠️ {formError}</div>
+    )}
+
     {/* Submit */}
     <button
       type="submit"
@@ -179,6 +212,11 @@ export default function RequisitionPage() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
   const cartHydratedRef = useRef(false);
+  const [branchHydrated, setBranchHydrated] = useState(false);
+  const [pickingBranch, setPickingBranch] = useState(false);
+  const [knownRequesters, setKnownRequesters] = useState<string[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -195,6 +233,57 @@ export default function RequisitionPage() {
     }
     fetchData();
   }, []);
+
+  // สาขาที่เลือกไว้ จำในเครื่องนี้ (เหมือนระบบแจ้งสินค้าใกล้หมด)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const savedBranch = window.localStorage.getItem(BRANCH_STORAGE_KEY);
+        if (savedBranch) setBranchName(savedBranch);
+      } catch {
+        // localStorage อาจใช้ไม่ได้ — ให้เลือกสาขาใหม่
+      }
+      setBranchHydrated(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ชื่อผู้เบิก: เครื่องนี้เคยใช้ (ก่อน) + เคยเบิกในสาขานี้จากใบเบิกเก่า — กดเลือกได้ไม่ต้องพิมพ์ใหม่
+  useEffect(() => {
+    if (!branchName) return;
+    let cancelled = false;
+    const local = readLocalRequesters(branchName);
+    const timer = setTimeout(() => {
+      setKnownRequesters(local);
+      setRequesterName((current) => current || local[0] || '');
+    }, 0);
+    supabase
+      .from('requisitions')
+      .select('requester_name')
+      .eq('branch_name', branchName)
+      .order('created_at', { ascending: false })
+      .limit(200)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const fromDb = data.map((row) => String(row.requester_name ?? '').trim()).filter(Boolean);
+        setKnownRequesters([...new Set([...local, ...fromDb])].slice(0, 12));
+      });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [branchName]);
+
+  const selectBranch = (name: string) => {
+    if (name !== branchName) setRequesterName('');
+    setBranchName(name);
+    setPickingBranch(false);
+    try {
+      window.localStorage.setItem(BRANCH_STORAGE_KEY, name);
+    } catch {
+      // ไม่กระทบการเบิก
+    }
+  };
 
   useEffect(() => {
     try {
@@ -257,15 +346,17 @@ export default function RequisitionPage() {
 
   const handlePreSubmitCheck = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!branchName.trim())   { alert('กรุณาเลือกสาขา'); return; }
-    if (!requesterName.trim()) { alert('กรุณากรอกชื่อผู้เบิก'); return; }
-    if (cart.length === 0)    { alert('กรุณาเลือกสินค้าอย่างน้อย 1 รายการ'); return; }
+    if (!branchName.trim())   { setFormError('กรุณาเลือกสาขา'); return; }
+    if (!requesterName.trim()) { setFormError('กรุณากรอกชื่อผู้เบิก'); return; }
+    if (cart.length === 0)    { setFormError('กรุณาเลือกสินค้าอย่างน้อย 1 รายการ'); return; }
+    setFormError(null);
     setIsCartOpen(false);
     setShowConfirmModal(true);
   };
 
   const handleConfirmSubmit = async () => {
     setShowConfirmModal(false);
+    setSubmitError(null);
     setLoading(true);
 
     const { data: reqData, error: reqError } = await supabase
@@ -275,7 +366,7 @@ export default function RequisitionPage() {
       .single();
 
     if (reqError || !reqData) {
-      alert(`เกิดข้อผิดพลาด: ${reqError?.message || 'ไม่สามารถสร้างใบเบิกได้'}`);
+      setSubmitError(`ส่งใบเบิกไม่สำเร็จ: ${reqError?.message || 'ไม่สามารถสร้างใบเบิกได้'} — สินค้าในตะกร้ายังอยู่ กรุณาลองใหม่`);
       setLoading(false);
       return;
     }
@@ -292,16 +383,32 @@ export default function RequisitionPage() {
     setLoading(false);
 
     if (detailError) {
-      alert('เกิดข้อผิดพลาดในการบันทึกรายการ: ' + detailError.message);
+      setSubmitError('บันทึกรายการสินค้าไม่สำเร็จ: ' + detailError.message + ' — กรุณาแจ้งสำนักงานใหญ่');
     } else {
       setSubmittedRequisitionId(reqData.id);
+      saveLocalRequester(branchName, requesterName.trim());
       setCart([]);
       setSearchTerm('');
-      setRequesterName('');
-      setBranchName('');
       setCurrentPage(1);
     }
   };
+
+  // สาขาที่จำไว้ไม่อยู่ในรายชื่อแล้ว (เช่น เปลี่ยนชื่อสาขา) ถือว่ายังไม่ได้เลือก
+  const branchValid = Boolean(branchName) && (catalogLoading || branches.some((b) => b.name === branchName));
+
+  if (!branchHydrated) return <div className="min-h-screen bg-[#fdf4f7]" />;
+  if (!branchValid || pickingBranch) {
+    return (
+      <BranchPicker
+        branches={branches}
+        loading={catalogLoading}
+        error={catalogError}
+        current={branchName}
+        onSelect={selectBranch}
+        onCancel={branchValid ? () => setPickingBranch(false) : undefined}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#fdf4f7] py-6 sm:py-8 px-3 sm:px-6 lg:px-8 text-slate-800 relative pb-24 lg:pb-10">
@@ -327,8 +434,11 @@ export default function RequisitionPage() {
                 <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-800 leading-tight">
                   ใบเบิกของ Aemori
                 </h1>
-                <p className="text-[10px] font-bold text-pink-400 mt-0.5 uppercase tracking-[0.15em]">
-                  ระบบจัดการคำขอเบิกวัสดุอุปกรณ์
+                <p className="text-xs font-bold text-slate-600 mt-0.5">
+                  🏪 {branchName}{' '}
+                  <button type="button" onClick={() => setPickingBranch(true)} className="font-black text-pink-500 hover:underline">
+                    เปลี่ยนสาขา
+                  </button>
                 </p>
               </div>
             </div>
@@ -518,9 +628,8 @@ export default function RequisitionPage() {
               </div>
               <div className="p-4">
                 <CartFormContent
-                  branchName={branchName} setBranchName={setBranchName}
-                  branches={branches}
-                  requesterName={requesterName} setRequesterName={setRequesterName}
+                  branchName={branchName} onChangeBranch={() => setPickingBranch(true)}
+                  requesterName={requesterName} setRequesterName={setRequesterName} knownRequesters={knownRequesters} formError={formError}
                   handlePreSubmitCheck={handlePreSubmitCheck}
                   totalCartItems={totalCartItems}
                   cart={cart} updateQuantity={updateQuantity} removeFromCart={removeFromCart}
@@ -531,6 +640,14 @@ export default function RequisitionPage() {
           </div>
         </div>
       </div>
+
+      {submitError && (
+        <div role="alert" className="fixed inset-x-3 top-3 z-[60] mx-auto flex max-w-lg items-start gap-3 rounded-2xl border border-rose-200 bg-white p-4 shadow-xl shadow-rose-100">
+          <span className="text-xl">⚠️</span>
+          <p className="flex-1 text-sm font-bold text-rose-600">{submitError}</p>
+          <button type="button" onClick={() => setSubmitError(null)} className="text-lg font-bold text-slate-400 hover:text-slate-600" aria-label="ปิด">×</button>
+        </div>
+      )}
 
       {submittedRequisitionId && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/30 p-4 backdrop-blur-sm">
@@ -600,9 +717,8 @@ export default function RequisitionPage() {
         </div>
         <div className="flex-1 overflow-hidden p-4">
           <CartFormContent
-            branchName={branchName} setBranchName={setBranchName}
-            branches={branches}
-            requesterName={requesterName} setRequesterName={setRequesterName}
+            branchName={branchName} onChangeBranch={() => { setIsCartOpen(false); setPickingBranch(true); }}
+            requesterName={requesterName} setRequesterName={setRequesterName} knownRequesters={knownRequesters} formError={formError}
             handlePreSubmitCheck={handlePreSubmitCheck}
             totalCartItems={totalCartItems}
             cart={cart} updateQuantity={updateQuantity} removeFromCart={removeFromCart}

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import AdminNav from '../components/AdminNav';
 import ExcelJS from 'exceljs';
+import { openPdfBlob } from '@/lib/open-pdf';
 import {
   PDFDownloadLink,
+  pdf,
   Document,
   Page,
   Text,
@@ -463,6 +465,23 @@ export default function AdminReportsPage() {
       : `สรุปรายละเอียดการเบิก: ${selectedBranch}`;
   };
 
+  // ปุ่ม "พิมพ์" เปิดรายงานเป็นเอกสาร PDF ในแท็บใหม่ (พิมพ์จากตัว PDF) — ไม่พิมพ์หน้าเว็บ
+  const [printing, setPrinting] = useState(false);
+  const handlePrintReport = async () => {
+    const target = window.open('', '_blank'); // เปิดแท็บก่อน await กัน popup blocker
+    setPrinting(true);
+    try {
+      const blob = await pdf(<ReportPDF data={currentData} title={getReportHeaderTitle()} type={selectedReportType} dateFrom={dateFrom} dateTo={dateTo} />).toBlob();
+      openPdfBlob(blob, `Report_${selectedReportType}.pdf`, target);
+    } catch (error) {
+      target?.close();
+      console.error('[reports] pdf', error);
+      window.alert('สร้างเอกสาร PDF ไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      setPrinting(false);
+    }
+  };
+
     const handleExportToExcel = async () => {
     const workbook  = new ExcelJS.Workbook();
     const sheetName = (selectedBranch === 'all' ? 'Report' : selectedBranch).substring(0, 31);
@@ -702,10 +721,11 @@ export default function AdminReportsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-white text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 shadow-sm active:scale-95 transition-all"
+                onClick={handlePrintReport}
+                disabled={!hasReportData || printing}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-white text-slate-500 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 shadow-sm active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <span>🖨️</span><span>พิมพ์</span>
+                <span>🖨️</span><span>{printing ? 'กำลังเตรียม...' : 'พิมพ์'}</span>
               </button>
             </div>
           </div>
