@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { callApi, errorText } from '@/lib/requisition-api';
+import { compressImage } from '@/lib/stock-request/client';
 import AdminNav from '../components/AdminNav';
 import ExcelJS from 'exceljs';
 
@@ -90,7 +91,7 @@ export default function AdminInventoryPage() {
 
   // ฟังก์ชันดึงสาขา
   async function fetchBranches() {
-    const { data } = await supabase.from('branches').select('*').order('name');
+    const { data } = await supabase.from('branches').select('*').is('archived_at', null).order('name');
     if (data) setAllBranches(data);
   }
 
@@ -102,7 +103,10 @@ export default function AdminInventoryPage() {
   // ฟังก์ชันลบสาขา
   const deleteBranch = async (id: string) => {
     if (!window.confirm('ยืนยันการลบสาขานี้?')) return;
-    try { await callApi(`/api/admin/branches/${id}`, 'DELETE'); } catch (error) { alert('ลบสาขาไม่สำเร็จ: ' + errorText(error)); return; }
+    let result: unknown;
+    try { result = await callApi(`/api/admin/branches/${id}`, 'DELETE'); } catch (error) { alert('ลบสาขาไม่สำเร็จ: ' + errorText(error)); return; }
+    // สาขาที่มีประวัติบิล จะถูกเก็บถาวร (ซ่อน) แทนการลบ เพื่อไม่ให้ประวัติหาย
+    if ((result as { result?: string } | null)?.result === 'archived') alert('สาขานี้มีประวัติบิลในระบบแจ้งสินค้าใกล้หมด จึงซ่อนสาขาแทนการลบ (ประวัติยังอยู่ · เพิ่มชื่อเดิมอีกครั้งเพื่อกู้คืนได้)');
     fetchBranches();
   };
 
@@ -113,8 +117,9 @@ export default function AdminInventoryPage() {
 
     // อัปโหลดผ่าน server (ตรวจชนิด/ขนาดไฟล์) — ไม่เขียน Storage จากเบราว์เซอร์โดยตรง
     try {
+      // ย่อรูปก่อนอัปโหลด (ด้านยาว 1024px JPEG) — ประหยัดพื้นที่และโหลดหน้าเบิกสินค้าเร็วขึ้น
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', new File([await compressImage(file)], 'product.jpg', { type: 'image/jpeg' }));
       const { url } = await callApi<{ url: string }>('/api/admin/items/image', 'POST', form);
       setFormData((prev) => ({ ...prev, image_url: url }));
     } catch (error) {

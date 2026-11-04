@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { IssueBadge } from '@/components/stock-request/BillParts';
+import CutAllPanel from '@/components/stock-request/CutAllPanel';
 import { EmptyState, ErrorState, InlineError, LoadingState, Spinner, StatusBadge, inputClass, secondaryButton } from '@/components/stock-request/ui';
 import { STATUS_LABEL, STATUS_ORDER } from '@/lib/stock-request/constants';
 import { apiFetch, errorMessage, formatDateTime, todayBangkok } from '@/lib/stock-request/client';
@@ -54,7 +55,7 @@ export default function HqBillsPage() {
     if (!applied) return;
     setLoading(true);
     try {
-      setData(await apiFetch(`/admin/stock-request/api/bills?${toQuery(applied, page)}`));
+      setData(await apiFetch(`/admin/stock-request/api/bills?${toQuery(applied, page)}&hideDone=1`));
       setError(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -98,13 +99,25 @@ export default function HqBillsPage() {
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  // บิลรอตัดที่ยังไม่มีรายการ = บิลที่ระบบเปิดรอไว้ ไม่ต้องทำอะไร จึงไม่แสดงในตาราง
+  const rows = data?.bills.filter((bill) => !(bill.status === 'pending' && bill.item_count === 0)) ?? [];
+  const hiddenEmpty = (data?.bills.length ?? 0) - rows.length;
+  // จัดกลุ่มตามสาขา (เรียงชื่อสาขา) ในแต่ละกลุ่มยังเรียงบิลใหม่ → เก่า
+  const groups = [...rows.reduce((map, bill) => map.set(bill.branch_name, [...(map.get(bill.branch_name) ?? []), bill]), new Map<string, BillSummary[]>())].sort(([a], [b]) =>
+    a.localeCompare(b, 'th'),
+  );
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black">บิลทุกสาขา</h1>
-          <p className="text-sm text-slate-500">เรียงตามวันที่สร้างบิล ใหม่ → เก่า</p>
+          <p className="text-sm text-slate-500">
+            บิลที่ยังไม่จบ เรียงใหม่ → เก่า · บิลที่ได้รับสินค้าแล้วและไม่มีปัญหาค้าง ดูได้ที่{' '}
+            <Link href="/admin/stock-request/branches" className="font-bold text-pink-600 hover:underline">
+              🗂️ ประวัติบิล
+            </Link>
+          </p>
         </div>
         <div className="flex gap-2">
           <button type="button" className={secondaryButton} disabled={exporting !== null} onClick={() => runExport('excel')}>
@@ -115,6 +128,8 @@ export default function HqBillsPage() {
           </button>
         </div>
       </div>
+
+      <CutAllPanel onDone={load} />
 
       <form
         onSubmit={(event) => {
@@ -136,7 +151,7 @@ export default function HqBillsPage() {
           <option value="">ทุกสถานะ</option>
           {STATUS_ORDER.map((status) => (
             <option key={status} value={status}>
-              {STATUS_LABEL[status]}
+              {status === 'received' ? 'ได้รับแล้ว (มีปัญหาค้าง)' : STATUS_LABEL[status]}
             </option>
           ))}
         </select>
@@ -158,16 +173,15 @@ export default function HqBillsPage() {
         <ErrorState message={error} onRetry={load} />
       ) : !data ? (
         <LoadingState />
-      ) : data.bills.length === 0 ? (
-        <EmptyState icon="🔎" title="ไม่พบบิลตามตัวกรอง" />
+      ) : rows.length === 0 ? (
+        <EmptyState icon="🔎" title="ไม่พบบิลตามตัวกรอง" description="บิลที่จบแล้วอยู่ที่หน้า ประวัติบิล" />
       ) : (
         <div className={`overflow-hidden rounded-2xl border border-pink-100 bg-white shadow-sm ${loading ? 'opacity-60' : ''}`}>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500">
                 <tr>
                   <th className="px-4 py-3">เลขที่บิล</th>
-                  <th className="px-4 py-3">สาขา</th>
                   <th className="px-4 py-3">สถานะ</th>
                   <th className="px-4 py-3 text-center">รายการ</th>
                   <th className="px-4 py-3">สร้างเมื่อ</th>
@@ -175,33 +189,40 @@ export default function HqBillsPage() {
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.bills.map((bill) => (
-                  <tr key={bill.id} className="hover:bg-pink-50/40">
-                    <td className="px-4 py-3 font-mono font-bold">{bill.bill_no}</td>
-                    <td className="px-4 py-3">{bill.branch_name}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <StatusBadge status={bill.status as BillStatus} />
-                        <IssueBadge bill={bill} />
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold">{bill.item_count}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{formatDateTime(bill.created_at)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{bill.billed_at ? `${formatDateTime(bill.billed_at)} · ${bill.billed_by_name ?? ''}` : '-'}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Link href={`/admin/stock-request/bills/${bill.id}`} className="rounded-lg bg-pink-50 px-3 py-1.5 text-xs font-bold text-pink-700 hover:bg-pink-100">
-                        เปิดบิล →
-                      </Link>
+              {groups.map(([branchName, bills]) => (
+                <tbody key={branchName} className="divide-y divide-slate-100 border-t-4 border-pink-50">
+                  <tr className="bg-pink-50/70">
+                    <td colSpan={6} className="px-4 py-2">
+                      <span className="text-sm font-black text-pink-700">🏪 {branchName}</span>
+                      <span className="ml-2 text-xs font-bold text-slate-400">{bills.length} บิล</span>
                     </td>
                   </tr>
-                ))}
-              </tbody>
+                  {bills.map((bill) => (
+                    <tr key={bill.id} className="hover:bg-pink-50/40">
+                      <td className="px-4 py-3 pl-8 font-mono font-bold">{bill.bill_no}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <StatusBadge status={bill.status as BillStatus} />
+                          <IssueBadge bill={bill} />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold">{bill.item_count}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{formatDateTime(bill.created_at)}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{bill.billed_at ? `${formatDateTime(bill.billed_at)} · ${bill.billed_by_name ?? ''}` : '-'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Link href={`/admin/stock-request/bills/${bill.id}`} className="rounded-lg bg-pink-50 px-3 py-1.5 text-xs font-bold text-pink-700 hover:bg-pink-100">
+                          เปิดบิล →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              ))}
             </table>
           </div>
           <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
             <span>
-              ทั้งหมด {data.total} บิล · หน้า {page}/{totalPages}
+              ทั้งหมด {data.total - hiddenEmpty} บิล{hiddenEmpty ? ` (ไม่นับบิลว่างที่รอรายการ ${hiddenEmpty} ใบ)` : ''} · หน้า {page}/{totalPages}
             </span>
             <div className="flex gap-2">
               <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="rounded-lg px-3 py-1.5 font-bold ring-1 ring-slate-200 disabled:opacity-40">

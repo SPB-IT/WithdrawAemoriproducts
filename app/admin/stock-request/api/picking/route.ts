@@ -7,7 +7,7 @@ import type { BillRow } from '@/lib/stock-request/types';
 
 export const dynamic = 'force-dynamic';
 
-// บิลที่ตัดแล้วรอจัดของ (สถานะ billed) พร้อมความคืบหน้าการเช็คของ — เก่าก่อน (ทำตามลำดับ)
+// บิลที่ตัดแล้วรอแพ็คของ (สถานะ billed) พร้อมความคืบหน้าการเช็คของ — เก่าก่อน (ทำตามลำดับ)
 export const GET = handle(async () => {
   await requireAdmin();
   const { data, error } = await getServiceClient()
@@ -26,6 +26,8 @@ export const GET = handle(async () => {
       billed_at: bill.billed_at,
       total: bill.items.length,
       picked: bill.items.filter((item) => item.picked_at).length,
+      version: bill.version,
+      checkers: [...new Set(bill.items.map((item) => item.picked_by).filter((name): name is string => !!name))],
     })),
   });
 });

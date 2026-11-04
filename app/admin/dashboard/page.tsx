@@ -19,7 +19,7 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
-      const { data: branchesData } = await supabase.from('branches').select('name').order('name');
+      const { data: branchesData } = await supabase.from('branches').select('name').is('archived_at', null).order('name');
       const { data: itemsData } = await supabase.from('items').select('name, unit, price').order('name');
 
       const { data: rawData } = await supabase

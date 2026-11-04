@@ -47,7 +47,7 @@ function describe(data: JsonObject | null) {
 }
 
 /**
- * ส่งออก Excel 1 ไฟล์ 4 ชีต: รายการเบิก, ประวัติบิล, รายงานการแก้ไข, รายงานสินค้าทดแทน
+ * ส่งออก Excel 1 ไฟล์ 4 ชีต: รายการสินค้า, ประวัติบิล, รายงานการแก้ไข, รายงานสินค้าทดแทน
  * ใช้ได้ทั้งบิลเดียว (หน้ารายละเอียด) และหลายบิล/ทุกสาขา (หน้ารวมบิล)
  */
 export async function exportBillsExcel(bills: BillDetail[], filename: string) {
@@ -57,7 +57,7 @@ export async function exportBillsExcel(bills: BillDetail[], filename: string) {
 
   addSheet(
     workbook,
-    'รายการเบิก',
+    'รายการสินค้า',
     [
       { header: 'เลขที่บิล', key: 'bill_no', width: 20 },
       { header: 'สาขา', key: 'branch', width: 24 },

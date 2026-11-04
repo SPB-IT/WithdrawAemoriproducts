@@ -183,7 +183,7 @@ function ReceiveCheck() {
         </div>
       )}
       <IssueBanner bill={bill} />
-      {bill.status === 'billed' && <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600">สำนักงานใหญ่กำลังจัดของ — เช็คของได้เมื่อจัดส่งแล้ว</p>}
+      {bill.status === 'billed' && <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600">สำนักงานใหญ่กำลังแพ็คของ — เช็คของได้เมื่อจัดส่งแล้ว</p>}
       <InlineError message={actionError} />
 
       <ul className="space-y-3">

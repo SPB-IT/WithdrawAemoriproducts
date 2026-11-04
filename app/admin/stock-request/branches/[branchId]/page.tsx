@@ -37,7 +37,7 @@ export default function BranchHistoryPage() {
   return (
     <div className="space-y-4">
       <Link href="/admin/stock-request/branches" className="text-xs font-bold text-slate-500 hover:text-pink-600">
-        ← รายสาขา
+        ← ประวัติบิล
       </Link>
       <div>
         <h1 className="text-2xl font-black">🏪 {branch.name}</h1>

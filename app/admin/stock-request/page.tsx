@@ -7,7 +7,20 @@ import { STATUS_LABEL, STATUS_ORDER } from '@/lib/stock-request/constants';
 import { apiFetch, errorMessage, formatDateTime, formatNumber } from '@/lib/stock-request/client';
 import type { BillStatus } from '@/lib/stock-request/types';
 
+interface StockSummary {
+  reportedItems: number;
+  reportedBranches: number;
+  outAtBranch: number;
+  toPack: number;
+  toPackBills: number;
+  packedBillsReady: number;
+  shortages: number;
+  topProducts: { product_code: string; product_name: string; min_stock: number | null; branches: { name: string; stock: number | null }[] }[];
+  shortageList: { kind: 'missing' | 'no_stock'; id: string; bill_id: string; bill_no: string; branch_name: string; product_name: string; product_code: string; note: string | null }[];
+}
+
 interface DashboardData {
+  stock: StockSummary;
   branchCount: number;
   openIssues: number;
   statusCounts: Record<BillStatus, number>;
@@ -37,7 +50,7 @@ const CARD_STYLE: Record<BillStatus, [string, string, string]> = {
 
 const CARD_LABEL: Record<BillStatus, string> = {
   pending: 'บิลที่รอตัด (มีรายการ)',
-  billed: 'ตัดบิลแล้ว · รอจัดส่ง',
+  billed: 'ตัดบิลแล้ว · รอแพ็ค/จัดส่ง',
   shipped: 'กำลังจัดส่ง',
   received: 'ได้รับสินค้าแล้ว',
 };
@@ -92,7 +105,7 @@ export default function HqDashboardPage() {
         >
           <p className={`text-xs font-black ${data.openIssues ? 'text-rose-700' : 'text-slate-500'}`}>⚠️ บิลมีปัญหา (ของไม่ครบ)</p>
           <p className="mt-2 text-3xl font-black text-slate-800">{formatNumber(data.openIssues)}</p>
-          <p className={`mt-1 text-xs font-semibold ${data.openIssues ? 'text-rose-600' : 'text-slate-400'}`}>ดูรายสาขา →</p>
+          <p className={`mt-1 text-xs font-semibold ${data.openIssues ? 'text-rose-600' : 'text-slate-400'}`}>ดูบิลที่มีปัญหา →</p>
         </Link>
         {STATUS_ORDER.map((status) => {
           const [box, title, link] = CARD_STYLE[status];
@@ -105,6 +118,8 @@ export default function HqDashboardPage() {
           );
         })}
       </section>
+
+      <StockSection stock={data.stock} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <section className="rounded-2xl border border-pink-100 bg-white p-5 shadow-sm">
@@ -130,7 +145,7 @@ export default function HqDashboardPage() {
         </section>
 
         <section className="rounded-2xl border border-pink-100 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 text-sm font-black text-slate-700">รายการเบิกใหม่ล่าสุด</h2>
+          <h2 className="mb-3 text-sm font-black text-slate-700">รายการที่สาขาแจ้งล่าสุด</h2>
           {data.latest.length === 0 ? (
             <EmptyState icon="📭" title="ยังไม่มีรายการ" />
           ) : (
@@ -158,5 +173,95 @@ export default function HqDashboardPage() {
       </div>
       <p className="text-center text-xs text-slate-400">สถานะ: {STATUS_ORDER.map((status) => STATUS_LABEL[status]).join(' → ')}</p>
     </div>
+  );
+}
+
+// สรุปสินค้า: แจ้งใกล้หมดรอบนี้ / หมดที่สาขา / รอแพ็ค / ของขาด + รายการสินค้าที่หลายสาขาแจ้ง และรายการของขาด
+function StockSection({ stock }: { stock: StockSummary }) {
+  const cards = [
+    { icon: '📝', label: 'สินค้าที่แจ้งรอบนี้', value: stock.reportedItems, sub: `จาก ${stock.reportedBranches} สาขา · ยังไม่ตัดบิล`, tone: 'border-amber-100 bg-amber-50 text-amber-700', href: '/admin/stock-request/bills?status=pending' },
+    { icon: '🚨', label: 'หมดแล้วที่สาขา', value: stock.outAtBranch, sub: 'คงเหลือหน้าร้าน 0 ชิ้น', tone: stock.outAtBranch ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-100 bg-white text-slate-500', href: '/admin/stock-request/bills?status=pending' },
+    { icon: '📦', label: 'รอแพ็คของ', value: stock.toPack, sub: stock.toPack ? `ใน ${stock.toPackBills} บิล${stock.packedBillsReady ? ` · แพ็คเสร็จรอส่ง ${stock.packedBillsReady} บิล` : ''}` : stock.packedBillsReady ? `แพ็คเสร็จรอส่ง ${stock.packedBillsReady} บิล` : 'ไม่มีของค้างแพ็ค', tone: 'border-sky-100 bg-sky-50 text-sky-700', href: '/admin/stock-request/pick' },
+    { icon: '❌', label: 'ของขาด / ไม่มีส่ง', value: stock.shortages, sub: 'สาขาแจ้งไม่ได้รับ + ไม่มีของส่ง', tone: stock.shortages ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-100 bg-white text-slate-500', href: '/admin/stock-request/branches' },
+  ];
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-base font-black text-slate-800">📊 สรุปสินค้า</h2>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {cards.map((card) => (
+          <Link key={card.label} href={card.href} className={`rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-md ${card.tone}`}>
+            <p className="text-xs font-black">
+              {card.icon} {card.label}
+            </p>
+            <p className="mt-1.5 text-3xl font-black text-slate-800">{formatNumber(card.value)}</p>
+            <p className="mt-0.5 text-[11px] font-semibold opacity-80">{card.sub}</p>
+          </Link>
+        ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+          <h3 className="mb-1 text-sm font-black text-slate-700">🔥 สินค้าที่สาขาแจ้งใกล้หมด (รอบนี้)</h3>
+          <p className="mb-3 text-[11px] text-slate-400">เรียงจากจำนวนสาขาที่แจ้ง และคงเหลือน้อยสุด</p>
+          {stock.topProducts.length === 0 ? (
+            <EmptyState icon="✅" title="ยังไม่มีสาขาแจ้งรอบนี้" />
+          ) : (
+            <ul className="space-y-2">
+              {stock.topProducts.map((product) => (
+                <li key={product.product_code} className="rounded-xl bg-slate-50 p-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-800">{product.product_name}</p>
+                      <p className="font-mono text-[11px] text-slate-400">{product.product_code}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[11px] font-black text-pink-700">{product.branches.length} สาขา</span>
+                      {product.min_stock !== null && (
+                        <span className={`text-[11px] font-black ${product.min_stock === 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                          {product.min_stock === 0 ? 'หมดแล้ว' : `เหลือน้อยสุด ${formatNumber(product.min_stock)}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                    {product.branches.map((branch) => `${branch.name} (${branch.stock ?? '-'})`).join(' · ')}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+          <h3 className="mb-1 text-sm font-black text-slate-700">❌ ของขาด / ไม่มีของส่ง</h3>
+          <p className="mb-3 text-[11px] text-slate-400">สาขาแจ้งว่าไม่ได้รับ (ปัญหายังไม่ปิด) และของที่ผู้แพ็คของกดว่าไม่มีของส่งในบิลรอบนี้</p>
+          {stock.shortageList.length === 0 ? (
+            <EmptyState icon="✅" title="ไม่มีของขาด" />
+          ) : (
+            <ul className="space-y-2">
+              {stock.shortageList.map((item) => (
+                <li key={item.id}>
+                  <Link href={`/admin/stock-request/bills/${item.bill_id}`} className="block rounded-xl bg-slate-50 p-2.5 transition hover:bg-pink-50">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-slate-800">{item.product_name}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {item.branch_name} · <span className="font-mono">{item.bill_no}</span>
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-black ${item.kind === 'missing' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
+                        {item.kind === 'missing' ? 'สาขาไม่ได้รับ' : 'ไม่มีของส่ง'}
+                      </span>
+                    </div>
+                    {item.note && <p className="mt-1 line-clamp-2 text-[11px] text-rose-600">📝 {item.note}</p>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

@@ -5,7 +5,7 @@ import { formatDateTime, formatNumber } from '@/lib/stock-request/client';
 import type { AuditLogRow, BillDetail, BillItemDetail, JsonObject } from '@/lib/stock-request/types';
 import { PhotoThumb } from './ui';
 
-/** ความคืบหน้าการแพ็คของ (จากการติ๊กในหน้าเช็คของ) — done = เช็คครบทุกรายการแล้ว */
+/** ความคืบหน้าการแพ็คของ (จากการติ๊กในหน้าแพ็คของ) — done = แพ็คครบทุกรายการแล้ว */
 export function packingProgress(bill: BillDetail) {
   const items = bill.items.filter((item) => !item.is_removed);
   const picked = items.filter((item) => item.picked_at);
@@ -14,7 +14,7 @@ export function packingProgress(bill: BillDetail) {
   return { total: items.length, picked: picked.length, done: items.length > 0 && picked.length === items.length, checkers, lastPickedAt };
 }
 
-/** ไทม์ไลน์สถานะ: รออนุมัติ → ตัดบิล → กำลังแพ็คของ → จัดส่ง → ได้รับ */
+/** ไทม์ไลน์สถานะ: รอตัดบิล → ตัดบิล → กำลังแพ็คของ → จัดส่ง → ได้รับ */
 export function StatusTimeline({ bill }: { bill: BillDetail }) {
   const packing = packingProgress(bill);
   const statusIndex = STATUS_ORDER.indexOf(bill.status);
@@ -28,7 +28,7 @@ export function StatusTimeline({ bill }: { bill: BillDetail }) {
       done: packed,
       active: !packed && bill.status === 'billed',
       time: packed ? packing.lastPickedAt : null,
-      who: packed ? (packing.checkers.length ? `ผู้เช็ค: ${packing.checkers.join(', ')}` : null) : bill.status === 'billed' ? `เช็คแล้ว ${packing.picked}/${packing.total}` : null,
+      who: packed ? (packing.checkers.length ? `ผู้แพ็ค: ${packing.checkers.join(', ')}` : null) : bill.status === 'billed' ? `แพ็คแล้ว ${packing.picked}/${packing.total}` : null,
     },
     { label: STATUS_LABEL.shipped, done: statusIndex >= 2, time: bill.shipped_at, who: bill.shipped_name ? `ผู้ส่ง: ${bill.shipped_name}` : bill.shipped_by_name },
     { label: STATUS_LABEL.received, done: statusIndex >= 3, time: bill.received_at, who: bill.received_by_name },

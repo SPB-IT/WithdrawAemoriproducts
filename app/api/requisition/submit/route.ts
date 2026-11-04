@@ -31,7 +31,7 @@ export const POST = handle(async (request: Request) => {
 
   const db = serviceDb();
   const [branch, items] = await Promise.all([
-    db.from('branches').select('name').eq('name', branchName).maybeSingle(),
+    db.from('branches').select('name').eq('name', branchName).is('archived_at', null).maybeSingle(),
     db.from('items').select('id, price, is_active').in('id', [...quantities.keys()]),
   ]);
   if (branch.error) throw dbError(branch.error, 'ตรวจสอบสาขาไม่สำเร็จ');

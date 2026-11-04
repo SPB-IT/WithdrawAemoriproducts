@@ -4,12 +4,13 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import CameraCapture from '@/components/stock-request/CameraCapture';
+import ShipDialog from '@/components/stock-request/ShipDialog';
 import { ConfirmDialog, ErrorState, Field, InlineError, LoadingState, Modal, PhotoThumb, Spinner, StatusBadge, inputClass, primaryButton, secondaryButton } from '@/components/stock-request/ui';
 import { apiFetch, errorMessage, formatDateTime, formatNumber, uploadPhoto } from '@/lib/stock-request/client';
 import type { BillDetail, BillItemDetail } from '@/lib/stock-request/types';
 
 const REFRESH_MS = 10_000;
-const PICKER_KEY = 'sr_picker_names'; // ชื่อผู้เช็คของที่เคยใช้ในเครื่องนี้
+const PICKER_KEY = 'sr_picker_names'; // ชื่อผู้แพ็คของที่เคยใช้ในเครื่องนี้
 
 function readPickers(): string[] {
   try {
@@ -28,7 +29,7 @@ function savePicker(name: string) {
   }
 }
 
-// หน้าเช็คของ (มือถือ): ถือโทรศัพท์ไปจัดของในคลัง แตะการ์ดเพื่อติ๊กว่าเตรียมแล้ว — บันทึกในระบบ หลายคนช่วยกันได้
+// หน้าแพ็คของ (มือถือ): ถือโทรศัพท์ไปแพ็คของในคลัง แตะการ์ดเพื่อติ๊กว่าแพ็คแล้ว — บันทึกในระบบ หลายคนช่วยกันได้
 export default function PickingChecklistPage() {
   const { billId } = useParams<{ billId: string }>();
   const [bill, setBill] = useState<BillDetail | null>(null);
@@ -36,6 +37,7 @@ export default function PickingChecklistPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [hidePicked, setHidePicked] = useState(false);
+  const [shipOpen, setShipOpen] = useState(false);
   const [rejecting, setRejecting] = useState<BillItemDetail | null>(null);
   const [substituting, setSubstituting] = useState<BillItemDetail | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -113,7 +115,7 @@ export default function PickingChecklistPage() {
     await load();
   };
 
-  const withPicker = (reason: string) => (picker.trim() ? `${reason} · ผู้เช็คของ: ${picker.trim()}` : reason);
+  const withPicker = (reason: string) => (picker.trim() ? `${reason} · ผู้แพ็คของ: ${picker.trim()}` : reason);
 
   useEffect(() => {
     if (!notice) return;
@@ -136,7 +138,7 @@ export default function PickingChecklistPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4 pb-28">
       <Link href="/admin/stock-request/pick" className="text-xs font-bold text-slate-500 hover:text-pink-600">
-        ← บิลที่รอจัดของ
+        ← บิลที่รอแพ็คของ
       </Link>
 
       <section className="sticky top-2 z-20 rounded-2xl border border-pink-100 bg-white/95 p-4 shadow-sm backdrop-blur">
@@ -158,7 +160,7 @@ export default function PickingChecklistPage() {
         {pickable && (
           <div className="mt-3">
             <label className="block text-xs font-black text-slate-600">
-              ผู้เช็คของ <span className="text-rose-500">*</span>
+              ผู้แพ็คของ <span className="text-rose-500">*</span>
               <input
                 ref={pickerRef}
                 value={picker}
@@ -167,11 +169,11 @@ export default function PickingChecklistPage() {
                   if (event.target.value.trim()) setPickerMissing(false);
                 }}
                 className={`${inputClass} mt-1 ${pickerMissing ? 'border-rose-400 ring-4 ring-rose-100' : ''}`}
-                placeholder="ชื่อคนที่ไปเช็คของ"
+                placeholder="ชื่อคนที่แพ็คของ"
                 maxLength={100}
               />
             </label>
-            {pickerMissing && <p className="mt-1 text-xs font-bold text-rose-600">⚠️ ลงชื่อผู้เช็คของก่อน แล้วค่อยติ๊กรายการ</p>}
+            {pickerMissing && <p className="mt-1 text-xs font-bold text-rose-600">⚠️ ลงชื่อผู้แพ็คของก่อน แล้วค่อยติ๊กรายการ</p>}
             {pickers.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {pickers.map((name) => {
@@ -196,13 +198,13 @@ export default function PickingChecklistPage() {
         )}
         <label className="mt-3 flex items-center gap-2 text-xs font-bold text-slate-500">
           <input type="checkbox" checked={hidePicked} onChange={(event) => setHidePicked(event.target.checked)} className="h-4 w-4 accent-pink-500" />
-          ซ่อนรายการที่เตรียมแล้ว
+          ซ่อนรายการที่แพ็คแล้ว
         </label>
       </section>
 
       {!pickable && (
         <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600">
-          {bill.status === 'pending' ? 'บิลนี้ยังไม่ถูกตัด — เช็คของได้หลังตัดบิล' : 'บิลนี้จัดส่งแล้ว — ดูรายการได้อย่างเดียว'}
+          {bill.status === 'pending' ? 'บิลนี้ยังไม่ถูกตัด — แพ็คของได้หลังตัดบิล' : 'บิลนี้จัดส่งแล้ว — ดูรายการได้อย่างเดียว'}
         </p>
       )}
       <InlineError message={actionError} />
@@ -258,7 +260,7 @@ export default function PickingChecklistPage() {
                   )}
                   {picked && (
                     <span className="mt-1 block text-[11px] font-bold text-emerald-700">
-                      เตรียมแล้ว{item.picked_by ? ` โดย ${item.picked_by}` : ''} · {formatDateTime(item.picked_at)}
+                      แพ็คแล้ว{item.picked_by ? ` โดย ${item.picked_by}` : ''} · {formatDateTime(item.picked_at)}
                     </span>
                   )}
                 </span>
@@ -277,7 +279,7 @@ export default function PickingChecklistPage() {
           );
         })}
       </ul>
-      {hidePicked && shown.length === 0 && <p className="py-6 text-center text-sm font-bold text-emerald-600">✅ เตรียมครบทุกรายการแล้ว</p>}
+      {hidePicked && shown.length === 0 && <p className="py-6 text-center text-sm font-bold text-emerald-600">✅ แพ็คครบทุกรายการแล้ว</p>}
 
       {removedItems.length > 0 && (
         <section className="rounded-2xl border border-rose-100 bg-rose-50/40 p-3">
@@ -293,7 +295,7 @@ export default function PickingChecklistPage() {
                 {pickable && (
                   <button
                     type="button"
-                    onClick={() => setRemoved(item, false, 'นำกลับจากหน้าเช็คของ').catch((err) => setActionError(errorMessage(err)))}
+                    onClick={() => setRemoved(item, false, 'นำกลับจากหน้าแพ็คของ').catch((err) => setActionError(errorMessage(err)))}
                     className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200"
                   >
                     ↩ นำกลับ
@@ -332,14 +334,32 @@ export default function PickingChecklistPage() {
         }}
       />
 
+      <ShipDialog
+        open={shipOpen}
+        billNo={bill.bill_no}
+        summary={`แพ็คของเสร็จ ${pickedCount} รายการ${picker.trim() ? ` (ผู้แพ็ค ${picker.trim()})` : ''}`}
+        onClose={() => setShipOpen(false)}
+        onShip={async (shipperName) => {
+          await apiFetch(`/admin/stock-request/api/bills/${bill.id}/ship`, { method: 'POST', json: { expectedVersion: bill.version, shipperName } });
+          setShipOpen(false);
+          setNotice(`บิล ${bill.bill_no} จัดส่งแล้ว`);
+          await load();
+        }}
+      />
+
       {pickable && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-pink-100 bg-white/95 p-3 backdrop-blur">
           <div className="mx-auto max-w-2xl">
-            {/* เช็คครบ = แพ็คของเสร็จ (ติ๊กถูกในไทม์ไลน์) · การยืนยันจัดส่งทำที่หน้าบิลแยกต่างหาก */}
+            {/* ติ๊กครบ = แพ็คของเสร็จ (ติ๊กถูกในไทม์ไลน์) · จากนั้นกด "จัดส่ง" แยกอีกขั้น (ใส่ชื่อผู้ส่ง) */}
             {allPicked ? (
-              <Link href={`/admin/stock-request/bills/${bill.id}`} className={`${primaryButton} w-full py-3.5 text-base`}>
-                ✅ แพ็คของเสร็จแล้ว · กลับหน้าบิล
-              </Link>
+              <div className="flex gap-2">
+                <Link href={`/admin/stock-request/bills/${bill.id}`} className={`${secondaryButton} shrink-0 py-3.5`}>
+                  ✅ แพ็คเสร็จ · หน้าบิล
+                </Link>
+                <button type="button" onClick={() => setShipOpen(true)} className={`${primaryButton} flex-1 py-3.5 text-base`}>
+                  🚚 จัดส่ง
+                </button>
+              </div>
             ) : (
               <button type="button" disabled className={`${primaryButton} w-full py-3.5 text-base`}>
                 📦 กำลังแพ็คของ · เหลืออีก {items.length - pickedCount} รายการ
@@ -447,7 +467,7 @@ function SubstituteDialog({ item, bill, picker, onClose, onSaved }: { item: Bill
       const photoPath = photo ? await uploadPhoto('/admin/stock-request/api/upload-url', photo, { billId: bill.id }) : null;
       await apiFetch(`/admin/stock-request/api/items/${item.id}/substitution`, {
         method: 'POST',
-        json: { expectedVersion: bill.version, productName: form.name.trim(), productCode: form.code.trim(), reason: picker ? `${form.reason.trim()} · ผู้เช็คของ: ${picker}` : form.reason.trim(), photoPath },
+        json: { expectedVersion: bill.version, productName: form.name.trim(), productCode: form.code.trim(), reason: picker ? `${form.reason.trim()} · ผู้แพ็คของ: ${picker}` : form.reason.trim(), photoPath },
       });
       await onSaved(form.name.trim());
     } catch (err) {

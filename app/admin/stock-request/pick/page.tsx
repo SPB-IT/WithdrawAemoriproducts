@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import ShipDialog from '@/components/stock-request/ShipDialog';
 import { EmptyState, ErrorState, LoadingState } from '@/components/stock-request/ui';
 import { apiFetch, errorMessage, formatDateTime } from '@/lib/stock-request/client';
 
@@ -12,14 +13,18 @@ interface PickingBill {
   billed_at: string | null;
   total: number;
   picked: number;
+  version: number;
+  checkers: string[];
 }
 
 const REFRESH_MS = 15_000;
 
-// เช็คของ: บิลที่ตัดแล้วรอจัดเตรียม (เก่าก่อน) — แตะเพื่อเปิดรายการไปเช็คของในคลัง
+// แพ็คของ: บิลที่ตัดแล้วรอแพ็คของ (เก่าก่อน) — แตะเพื่อเปิดรายการไปเช็คของในคลัง
 export default function PickingListPage() {
   const [bills, setBills] = useState<PickingBill[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shipping, setShipping] = useState<PickingBill | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -40,16 +45,17 @@ export default function PickingListPage() {
   }, [load]);
 
   if (error && !bills) return <ErrorState message={error} onRetry={load} />;
-  if (!bills) return <LoadingState label="กำลังโหลดบิลที่รอจัดของ..." />;
+  if (!bills) return <LoadingState label="กำลังโหลดบิลที่รอแพ็คของ..." />;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div>
-        <h1 className="text-2xl font-black">📦 เช็คของ</h1>
-        <p className="text-sm text-slate-500">บิลที่ตัดแล้วรอจัดเตรียม เรียงจากตัดบิลก่อน · แตะบิลเพื่อเริ่มเช็คของ</p>
+        <h1 className="text-2xl font-black">📦 แพ็คของ</h1>
+        <p className="text-sm text-slate-500">บิลที่ตัดแล้วรอแพ็คของ เรียงจากตัดบิลก่อน · แตะบิลเพื่อเริ่มแพ็ค (ติ๊กทีละรายการ) · แพ็คครบแล้วกด “จัดส่ง”</p>
       </div>
+      {notice && <p className="rounded-xl bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700">✅ {notice}</p>}
       {bills.length === 0 ? (
-        <EmptyState icon="✅" title="ไม่มีบิลที่รอจัดของ" description="เมื่อสำนักงานใหญ่ตัดบิลแล้ว บิลจะมาแสดงที่นี่" />
+        <EmptyState icon="✅" title="ไม่มีบิลที่รอแพ็คของ" description="เมื่อสำนักงานใหญ่ตัดบิลแล้ว บิลจะมาแสดงที่นี่" />
       ) : (
         <ul className="space-y-3">
           {bills.map((bill) => {
@@ -72,11 +78,33 @@ export default function PickingListPage() {
                     <div className={`h-full rounded-full transition-all ${done ? 'bg-emerald-500' : 'bg-linear-to-r from-pink-500 to-rose-400'}`} style={{ width: `${percent}%` }} />
                   </div>
                 </Link>
+                {done && (
+                  <button
+                    type="button"
+                    onClick={() => setShipping(bill)}
+                    className="mt-2 w-full rounded-2xl bg-linear-to-r from-pink-500 to-rose-500 py-3 text-base font-black text-white shadow-md transition hover:shadow-lg"
+                  >
+                    🚚 จัดส่ง
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
       )}
+      <ShipDialog
+        open={!!shipping}
+        billNo={shipping?.bill_no ?? ''}
+        summary={shipping ? `${shipping.branch_name} · แพ็คของเสร็จ ${shipping.picked} รายการ${shipping.checkers.length ? ` (แพ็คโดย ${shipping.checkers.join(', ')})` : ''}` : ''}
+        onClose={() => setShipping(null)}
+        onShip={async (shipperName) => {
+          if (!shipping) return;
+          await apiFetch(`/admin/stock-request/api/bills/${shipping.id}/ship`, { method: 'POST', json: { expectedVersion: shipping.version, shipperName } });
+          setNotice(`บิล ${shipping.bill_no} (${shipping.branch_name}) จัดส่งแล้ว`);
+          setShipping(null);
+          await load();
+        }}
+      />
     </div>
   );
 }

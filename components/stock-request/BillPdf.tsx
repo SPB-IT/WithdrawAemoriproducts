@@ -63,7 +63,7 @@ function BillPages({ bill }: { bill: BillDetail }) {
     <Page size="A4" style={styles.page}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>ใบรายการเบิกสินค้า (แจ้งสินค้าใกล้หมด)</Text>
+          <Text style={styles.title}>ใบรายการแจ้งสินค้าใกล้หมด</Text>
           <Text style={styles.muted}>Aemori</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>

@@ -41,7 +41,9 @@ export function errorMessage(error: unknown) {
 // ---------------------------------------------------------------------------
 // Images
 // ---------------------------------------------------------------------------
-const MAX_EDGE = 1600;
+// ย่อรูปตอนอัปโหลด: ด้านยาว 1024px คุณภาพ 0.75 ≈ 60–110KB ต่อรูป (เดิม 1600px ≈ 170KB+) ยังเห็นสินค้า/ฉลากชัด
+const MAX_EDGE = 1024;
+const JPEG_QUALITY = 0.75;
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 
@@ -53,7 +55,7 @@ export function validateImageFile(file: File): string | null {
   return null;
 }
 
-/** Resize to ≤1600px on the long edge and re-encode as JPEG (keeps uploads well under the 5MB bucket limit). */
+/** Resize to ≤1024px on the long edge and re-encode as JPEG (keeps uploads well under the 5MB bucket limit). */
 export async function compressImage(source: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(source).catch(() => null);
   let width: number;
@@ -88,7 +90,7 @@ export async function compressImage(source: Blob): Promise<Blob> {
   draw(ctx, canvas.width, canvas.height);
   bitmap?.close();
 
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
   if (!blob) throw new Error('แปลงรูปไม่สำเร็จ กรุณาลองใหม่');
   return blob;
 }

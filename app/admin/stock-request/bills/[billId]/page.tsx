@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AuditList, IssueBanner, StatusTimeline, SubstitutionPair, packingProgress } from '@/components/stock-request/BillParts';
 import CameraCapture from '@/components/stock-request/CameraCapture';
+import ShipDialog from '@/components/stock-request/ShipDialog';
 import {
   ConfirmDialog,
   EmptyState,
@@ -137,7 +138,7 @@ export default function HqBillDetailPage() {
               )}
               {bill.status === 'billed' && (
                 <Link href={`/admin/stock-request/bills/${bill.id}/pick`} className={secondaryButton}>
-                  📦 เช็คของ
+                  📦 แพ็คของ
                 </Link>
               )}
               {bill.status === 'billed' && (
@@ -146,10 +147,10 @@ export default function HqBillDetailPage() {
                   type="button"
                   onClick={() => setDialog({ kind: 'ship' })}
                   disabled={!packingProgress(bill).done}
-                  title={packingProgress(bill).done ? undefined : 'ต้องเช็คของให้ครบก่อน'}
+                  title={packingProgress(bill).done ? undefined : 'ต้องแพ็คของให้ครบก่อน'}
                   className={`${primaryButton}`}
                 >
-                  🚚 ส่งแล้ว
+                  🚚 จัดส่ง
                 </button>
               )}
               <button type="button" className={secondaryButton} disabled={exporting !== null} onClick={() => runExport('sheet')}>
@@ -231,7 +232,13 @@ export default function HqBillDetailPage() {
       <ItemFormModal dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
       <SubstitutionModal dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
       <ReasonConfirm dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
-      <ShipDialog open={dialog?.kind === 'ship'} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
+      <ShipDialog
+        open={dialog?.kind === 'ship'}
+        billNo={bill.bill_no}
+        summary={shipSummary(bill)}
+        onClose={() => setDialog(null)}
+        onShip={(shipperName) => mutate(`/admin/stock-request/api/bills/${bill.id}/ship`, 'POST', { shipperName }, `บิล ${bill.bill_no} เปลี่ยนเป็นจัดส่งแล้ว`)}
+      />
       <ResolveIssueDialog
         open={resolving}
         bill={bill}
@@ -265,7 +272,7 @@ function ItemRow({ item, index, bill, onAction }: { item: BillItemDetail; index:
             </p>
             {item.staff_note && <p className="mt-1 text-xs text-slate-600">📝 สาขา: {item.staff_note}</p>}
             {item.hq_note && <p className="mt-1 text-xs text-sky-700">💬 HQ: {item.hq_note}</p>}
-            {item.picked_at && <p className="mt-1 text-[11px] font-bold text-slate-500">📦 จัดเตรียมแล้ว{item.picked_by ? ` โดย ${item.picked_by}` : ''} · {formatDateTime(item.picked_at)}</p>}
+            {item.picked_at && <p className="mt-1 text-[11px] font-bold text-slate-500">📦 แพ็คแล้ว{item.picked_by ? ` โดย ${item.picked_by}` : ''} · {formatDateTime(item.picked_at)}</p>}
             {item.received_state === 'ok' && <p className="mt-1 text-xs font-bold text-emerald-700">✓ สาขาได้รับแล้ว · {item.received_checked_by}</p>}
             {item.received_state === 'missing' && (
               <p className="mt-1 rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600">
@@ -688,80 +695,7 @@ function ResolveIssueDialog({ open, bill, onClose, onDone }: { open: boolean; bi
   );
 }
 
-const SHIPPER_KEY = 'sr_shipper_names'; // ชื่อผู้จัดส่งที่เคยใช้ในเครื่องนี้
-
-// ยืนยันส่งแล้ว — หลังแพ็คของเสร็จ ต้องระบุชื่อผู้ส่ง (บัญชีผู้ดูแลเป็นบัญชีรวม)
-function ShipDialog({ open, bill, onClose, mutate }: { open: boolean; bill: BillDetail; onClose: () => void; mutate: Mutate }) {
-  const [name, setName] = useState('');
-  const [recent, setRecent] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const timer = setTimeout(() => {
-      setError(null);
-      try {
-        const list = JSON.parse(localStorage.getItem(SHIPPER_KEY) ?? '[]');
-        const names = Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string') : [];
-        setRecent(names);
-        setName(names[0] ?? '');
-      } catch {
-        setRecent([]);
-        setName('');
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [open]);
-
-  const confirm = async () => {
-    const shipper = name.trim();
-    if (!shipper) return setError('กรุณาระบุชื่อผู้ส่ง');
-    setBusy(true);
-    setError(null);
-    try {
-      try {
-        localStorage.setItem(SHIPPER_KEY, JSON.stringify([shipper, ...recent.filter((item) => item !== shipper)].slice(0, 8)));
-      } catch {
-        // ไม่มี localStorage ก็ส่งต่อได้
-      }
-      await mutate(`/admin/stock-request/api/bills/${bill.id}/ship`, 'POST', { shipperName: shipper }, `บิล ${bill.bill_no} เปลี่ยนเป็นจัดส่งแล้ว`);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function shipSummary(bill: BillDetail) {
   const packing = packingProgress(bill);
-  return (
-    <ConfirmDialog
-      open={open}
-      title="ยืนยันส่งแล้ว"
-      confirmLabel="🚚 ยืนยันส่งแล้ว"
-      busy={busy}
-      onCancel={onClose}
-      onConfirm={confirm}
-      message={`บิล ${bill.bill_no} · แพ็คของเสร็จ ${packing.picked} รายการ${packing.checkers.length ? ` (เช็คโดย ${packing.checkers.join(', ')})` : ''} — สาขาจะได้รับแจ้งเตือนให้เช็คของเมื่อได้รับ`}
-    >
-      <div className="space-y-2">
-        {recent.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {recent.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setName(item)}
-                className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${item === name.trim() ? 'bg-pink-600 text-white ring-pink-600' : 'bg-pink-50 text-pink-700 ring-pink-100'}`}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        )}
-        <input value={name} onChange={(event) => setName(event.target.value)} className={inputClass} maxLength={100} placeholder="ชื่อผู้ส่ง (บังคับ)" />
-        <InlineError message={error} />
-      </div>
-    </ConfirmDialog>
-  );
+  return `แพ็คของเสร็จ ${packing.picked} รายการ${packing.checkers.length ? ` (แพ็คโดย ${packing.checkers.join(', ')})` : ''}`;
 }

@@ -17,7 +17,7 @@ export const POST = handle(async (request: NextRequest, context: { params: Promi
 
   const [detail] = await loadBillDetails([bill], { photos: false });
   const unchecked = detail.items.filter((item) => !item.is_removed && !item.picked_at).length;
-  if (unchecked > 0) throw new ApiError(409, 'SR_NOT_PICKED', `ยังเช็คของไม่ครบ อีก ${unchecked} รายการ — กรุณาเช็คของก่อนจัดส่ง`);
+  if (unchecked > 0) throw new ApiError(409, 'SR_NOT_PICKED', `ยังแพ็คของไม่ครบ อีก ${unchecked} รายการ — กรุณาแพ็คของให้ครบก่อนจัดส่ง`);
 
   const result = await rpc('mark_shipped', { p_admin_id: admin.id, p_bill_id: bill.id, p_expected_version: expectedVersion });
   const { error } = await getServiceClient().from('bills').update({ shipped_name: shipperName }).eq('id', bill.id);

@@ -13,7 +13,7 @@ export const SR_HQ_API = '/admin/stock-request/api';
 export const SR_SHARED_ADMIN_NAME = 'ผู้ดูแลระบบ';
 
 export const STATUS_LABEL: Record<BillStatus, string> = {
-  pending: 'รออนุมัติ',
+  pending: 'รอตัดบิล',
   billed: 'ตัดบิลแล้ว',
   shipped: 'จัดส่งแล้ว',
   received: 'ได้รับสินค้าแล้ว',

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/stock-request/admin-auth';
 import { fromDbError, handle } from '@/lib/stock-request/errors';
-import { getAdminNameMap, getBranches } from '@/lib/stock-request/queries';
+import { getAdminNameMap, getBranchNameMap } from '@/lib/stock-request/queries';
 import { getServiceClient } from '@/lib/stock-request/supabase-admin';
 import { parseBillFilters } from '@/lib/stock-request/filters';
 import type { BillRow, BillSummary } from '@/lib/stock-request/types';
@@ -15,8 +15,8 @@ export const GET = handle(async (request: NextRequest) => {
   const params = request.nextUrl.searchParams;
   const filters = parseBillFilters(params);
   const page = Math.max(1, Number(params.get('page')) || 1);
-  const branches = await getBranches();
-  const branchNames = new Map(branches.map((branch) => [branch.id, branch.name]));
+  const branchNames = await getBranchNameMap(); // รวมสาขาที่เก็บถาวร เพื่อแสดงชื่อในประวัติ
+  const branches = [...branchNames].map(([id, name]) => ({ id, name }));
 
   let branchIds: number[] | null = filters.branchId ? [filters.branchId] : null;
   if (filters.query) {
@@ -33,6 +33,8 @@ export const GET = handle(async (request: NextRequest) => {
     .order('bill_no', { ascending: false })
     .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
   if (filters.statuses.length) query = query.in('status', filters.statuses);
+  // hideDone: ซ่อนบิลที่จบแล้ว (ได้รับสินค้าแล้ว และไม่มีปัญหาค้าง) — ดูย้อนหลังได้ที่หน้ารายสาขา
+  if (params.get('hideDone') === '1') query = query.or('status.neq.received,issue_status.eq.open');
   if (branchIds) query = query.in('branch_id', branchIds);
   if (filters.from) query = query.gte('created_at', filters.from);
   if (filters.to) query = query.lte('created_at', filters.to);

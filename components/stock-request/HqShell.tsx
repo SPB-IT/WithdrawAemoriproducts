@@ -22,8 +22,8 @@ export function useAdmin() {
 const links = [
   { href: SR_HQ_HOME, label: 'แดชบอร์ด', icon: '📊' },
   { href: `${SR_HQ_HOME}/bills`, label: 'บิลทุกสาขา', icon: '🧾' },
-  { href: `${SR_HQ_HOME}/pick`, label: 'เช็คของ', icon: '📦' },
-  { href: `${SR_HQ_HOME}/branches`, label: 'รายสาขา', icon: '🏪' },
+  { href: `${SR_HQ_HOME}/pick`, label: 'แพ็คของ', icon: '📦' },
+  { href: `${SR_HQ_HOME}/branches`, label: 'ประวัติบิล', icon: '🗂️' },
   { href: `${SR_HQ_HOME}/audit`, label: 'ประวัติการแก้ไข', icon: '🕘' },
 ];
 

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const EXPORT_LIMIT = 300;
 
-// ข้อมูลสำหรับส่งออก Excel (รายการเบิก / ประวัติบิล / รายงานแก้ไข / รายงานสินค้าทดแทน) ตามตัวกรองเดียวกับหน้ารวมบิล
+// ข้อมูลสำหรับส่งออก Excel (รายการสินค้า / ประวัติบิล / รายงานแก้ไข / รายงานสินค้าทดแทน) ตามตัวกรองเดียวกับหน้ารวมบิล
 export const GET = handle(async (request: NextRequest) => {
   await requireAdmin();
   const filters = parseBillFilters(request.nextUrl.searchParams);

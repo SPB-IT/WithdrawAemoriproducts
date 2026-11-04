@@ -31,15 +31,25 @@ export async function rpc<T>(fn: string, args: Record<string, unknown>): Promise
 // ---------------------------------------------------------------------------
 // Branches (public.branches — read only, shared with the legacy system)
 // ---------------------------------------------------------------------------
-let branchCache: { at: number; data: Branch[] } | null = null;
+// สาขาที่ "เก็บถาวร" (archived_at) ถูกซ่อนจากรายการเลือก แต่ยังใช้แสดงชื่อในประวัติบิลได้
+let branchCache: { at: number; data: (Branch & { archived: boolean })[] } | null = null;
 
-export async function getBranches(): Promise<Branch[]> {
+async function loadAllBranches() {
   if (branchCache && Date.now() - branchCache.at < 60_000) return branchCache.data;
-  const { data, error } = await getServiceClient().schema('public').from('branches').select('id, name').order('id');
+  const { data, error } = await getServiceClient().schema('public').from('branches').select('id, name, archived_at').order('id');
   if (error) throw fromDbError(error);
-  const branches = (data ?? []).map((row: { id: number | string; name: string }) => ({ id: Number(row.id), name: row.name }));
+  const branches = (data ?? []).map((row: { id: number | string; name: string; archived_at: string | null }) => ({ id: Number(row.id), name: row.name, archived: !!row.archived_at }));
   branchCache = { at: Date.now(), data: branches };
   return branches;
+}
+
+export function clearBranchCache() {
+  branchCache = null;
+}
+
+/** สาขาที่ใช้งานอยู่ (ไม่รวมที่เก็บถาวร) */
+export async function getBranches(): Promise<Branch[]> {
+  return (await loadAllBranches()).filter((branch) => !branch.archived).map(({ id, name }) => ({ id, name }));
 }
 
 export async function getBranch(branchId: number): Promise<Branch | null> {
@@ -47,8 +57,9 @@ export async function getBranch(branchId: number): Promise<Branch | null> {
   return branches.find((branch) => branch.id === branchId) ?? null;
 }
 
+/** ชื่อสาขาทั้งหมด รวมที่เก็บถาวร — ใช้แสดงในประวัติบิล */
 export async function getBranchNameMap(): Promise<Map<number, string>> {
-  return new Map((await getBranches()).map((branch) => [branch.id, branch.name]));
+  return new Map((await loadAllBranches()).map((branch) => [branch.id, branch.name]));
 }
 
 // ---------------------------------------------------------------------------

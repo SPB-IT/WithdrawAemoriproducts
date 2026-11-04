@@ -229,7 +229,7 @@ export default function RequisitionPage() {
       setCatalogError('');
       const [{ data: itemsData, error: itemsError }, { data: branchesData, error: branchesError }] = await Promise.all([
         supabase.from('items').select('id, name, unit, image_url').eq('is_active', true).order('name'),
-        supabase.from('branches').select('name').order('name'),
+        supabase.from('branches').select('name').is('archived_at', null).order('name'),
       ]);
       if (itemsData)   setItems(itemsData);
       if (branchesData) setBranches(branchesData);
