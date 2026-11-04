@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { callApi, errorText } from '@/lib/requisition-api';
 import AdminNav from '../components/AdminNav';
 import ExcelJS from 'exceljs';
 
@@ -101,8 +102,7 @@ export default function AdminInventoryPage() {
   // ฟังก์ชันลบสาขา
   const deleteBranch = async (id: string) => {
     if (!window.confirm('ยืนยันการลบสาขานี้?')) return;
-    const { error } = await supabase.from('branches').delete().eq('id', id);
-    if (error) { alert('ลบสาขาไม่สำเร็จ: ' + error.message); return; }
+    try { await callApi(`/api/admin/branches/${id}`, 'DELETE'); } catch (error) { alert('ลบสาขาไม่สำเร็จ: ' + errorText(error)); return; }
     fetchBranches();
   };
 
@@ -110,19 +110,15 @@ export default function AdminInventoryPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}.${fileExt}`;
-    const filePath = `products/${fileName}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('product-images')
-      .upload(filePath, file);
-
-    if (uploadError) {
-      alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-    } else {
-      const { data } = supabase.storage.from('product-images').getPublicUrl(filePath);
-      setFormData((prev) => ({ ...prev, image_url: data.publicUrl }));
+    // อัปโหลดผ่าน server (ตรวจชนิด/ขนาดไฟล์) — ไม่เขียน Storage จากเบราว์เซอร์โดยตรง
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const { url } = await callApi<{ url: string }>('/api/admin/items/image', 'POST', form);
+      setFormData((prev) => ({ ...prev, image_url: url }));
+    } catch (error) {
+      alert('อัปโหลดรูปไม่สำเร็จ: ' + errorText(error));
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -156,11 +152,9 @@ export default function AdminInventoryPage() {
     };
 
     if (editingItem?.id) {
-      const { error } = await supabase.from('items').update(dataToSave).eq('id', editingItem.id);
-      if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return; }
+      try { await callApi(`/api/admin/items/${editingItem.id}`, 'PATCH', dataToSave); } catch (error) { alert('บันทึกไม่สำเร็จ: ' + errorText(error)); return; }
     } else {
-      const { error } = await supabase.from('items').insert(dataToSave);
-      if (error) { alert('เพิ่มสินค้าไม่สำเร็จ: ' + error.message); return; }
+      try { await callApi('/api/admin/items', 'POST', dataToSave); } catch (error) { alert('เพิ่มสินค้าไม่สำเร็จ: ' + errorText(error)); return; }
     }
 
     setEditingItem(null);
@@ -170,17 +164,17 @@ export default function AdminInventoryPage() {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('ยืนยันการลบสินค้านี้? หากสินค้าเคยถูกเบิก อาจทำให้ประวัติและรายงานอ้างอิงรายการไม่ได้ แนะนำให้ปิดใช้งานแทน')) return;
-    const { error } = await supabase.from('items').delete().eq('id', id);
-    if (error) { alert('ลบไม่สำเร็จ: ' + error.message); return; }
+    try { await callApi(`/api/admin/items/${id}`, 'DELETE'); } catch (error) { alert('ลบไม่สำเร็จ: ' + errorText(error)); return; }
     fetchInventory();
   };
 
   const toggleItemStatus = async (item: InventoryItem) => {
     setItems((prev) => prev.map((row) => row.id === item.id ? { ...row, is_active: !row.is_active } : row));
-    const { error } = await supabase.from('items').update({ is_active: !item.is_active }).eq('id', item.id);
-    if (error) {
+    try {
+      await callApi(`/api/admin/items/${item.id}`, 'PATCH', { is_active: !item.is_active });
+    } catch (error) {
       setItems((prev) => prev.map((row) => row.id === item.id ? item : row));
-      alert('เปลี่ยนสถานะไม่สำเร็จ: ' + error.message);
+      alert('เปลี่ยนสถานะไม่สำเร็จ: ' + errorText(error));
     }
   };
 
@@ -214,12 +208,10 @@ export default function AdminInventoryPage() {
     if (!amount || amount <= 0) { alert('กรุณากรอกจำนวนที่รับเข้ามากกว่า 0'); return; }
 
     setRestockSaving(true);
-    const { error } = await supabase.rpc('increment_item_stock', {
-      p_item_id: restockingItem.id,
-      p_qty: amount,
-    });
-    if (error) {
-      alert('รับสินค้าเข้าคลังไม่สำเร็จ: ' + error.message);
+    try {
+      await callApi(`/api/admin/items/${restockingItem.id}/restock`, 'POST', { amount });
+    } catch (error) {
+      alert('รับสินค้าเข้าคลังไม่สำเร็จ: ' + errorText(error));
       setRestockSaving(false);
       return;
     }
@@ -231,8 +223,7 @@ export default function AdminInventoryPage() {
 
   const handleAddBranch = async () => {
     if (!newBranchName.trim()) { alert('กรุณากรอกชื่อสาขา'); return; }
-    const { error } = await supabase.from('branches').insert([{ name: newBranchName.trim() }]);
-    if (error) { alert('เพิ่มสาขาไม่สำเร็จ: ' + error.message); return; }
+    try { await callApi('/api/admin/branches', 'POST', { name: newBranchName.trim() }); } catch (error) { alert('เพิ่มสาขาไม่สำเร็จ: ' + errorText(error)); return; }
     setNewBranchName('');
     fetchBranches();
     alert('เพิ่มสาขาเรียบร้อยแล้ว');

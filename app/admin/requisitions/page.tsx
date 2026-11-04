@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import AdminNav from '../components/AdminNav';
+import { callApi, errorText } from '@/lib/requisition-api';
 
 interface Requisition {
   id: string;
@@ -270,39 +271,14 @@ export default function AdminRequisitionsPage() {
       newStatus === 'rejected' ? 'ปฏิเสธ' : 'ยกเลิกการอนุมัติ';
     if (!window.confirm(`ยืนยันการ "${label}" ใบเบิกนี้?`)) return;
 
-    // ถ้าใบเบิกนี้เคยอนุมัติแล้ว (ตัดสต็อกไปแล้ว) แล้วกำลังจะยกเลิกการอนุมัติ ให้คืนจำนวนคงเหลือกลับเข้าคลัง
-    const wasApproved = selectedReq?.id === id && selectedReq.status === 'approved' && newStatus !== 'approved';
-    if (wasApproved) {
-      const { data: detailRows, error: detailFetchError } = await supabase
-        .from('requisition_details')
-        .select('item_id, quantity, rejection_reason')
-        .eq('requisition_id', id);
-      if (detailFetchError) {
-        alert(`เกิดข้อผิดพลาดในการดึงรายการเพื่อคืนสต็อก: ${detailFetchError.message}`);
-        return;
-      }
-      const restoreResults = await Promise.all(
-        (detailRows ?? [])
-          .filter((detail) => detail.item_id && !detail.rejection_reason)
-          .map((detail) =>
-            supabase.rpc('increment_item_stock', {
-              p_item_id: detail.item_id,
-              p_qty: detail.quantity,
-            })
-          )
-      );
-      const restoreError = restoreResults.find((result) => result.error)?.error;
-      if (restoreError) {
-        alert(`เกิดข้อผิดพลาดในการคืนจำนวนคงเหลือ: ${restoreError.message}\nกรุณาปรับจำนวนคงเหลือด้วยตนเองที่หน้าคลังสินค้า`);
-      }
-    }
-
-    const { error } = await supabase.from('requisitions').update({ status: newStatus }).eq('id', id);
-    if (error) {
-      alert(`เกิดข้อผิดพลาด: ${error.message}`);
-    } else {
+    // ผ่าน server: ถ้าเดิมอนุมัติแล้ว server จะคืนสต็อกให้อัตโนมัติ
+    try {
+      const result = await callApi<{ stockWarning: string | null }>(`/api/admin/requisitions/${id}/status`, 'POST', { status: newStatus });
+      if (result.stockWarning) alert(result.stockWarning);
       setSelectedReq(null);
       await Promise.all([fetchRequisitions(currentPage), fetchCounts()]);
+    } catch (error) {
+      alert(`เกิดข้อผิดพลาด: ${errorText(error)}`);
     }
   };
 
@@ -323,56 +299,19 @@ export default function AdminRequisitionsPage() {
     if (!window.confirm('ยืนยันจำนวนสินค้าที่จะจัดส่งและอนุมัติใบเบิกนี้?')) return;
 
     setSavingApproval(true);
-    const updateResults = await Promise.all(
-      activeDetails.map((detail) =>
-        supabase
-          .from('requisition_details')
-          .update({ quantity: detail.quantity })
-          .eq('id', detail.id)
-      )
-    );
-    const detailError = updateResults.find((result) => result.error)?.error;
-    if (detailError) {
-      alert(`บันทึกจำนวนสินค้าไม่สำเร็จ: ${detailError.message}`);
+    // ผ่าน server: บันทึกจำนวน → คำนวณยอดจากราคาในฐานข้อมูล → ตัดสต็อกครั้งเดียว
+    try {
+      const result = await callApi<{ stockWarning: string | null }>(`/api/admin/requisitions/${selectedReq.id}/approve`, 'POST', {
+        quantities: Object.fromEntries(activeDetails.map((detail) => [detail.id, detail.quantity])),
+      });
+      if (result.stockWarning) alert(result.stockWarning);
+      setSelectedReq(null);
+      await Promise.all([fetchRequisitions(currentPage), fetchCounts()]);
+    } catch (error) {
+      alert(`อนุมัติใบเบิกไม่สำเร็จ: ${errorText(error)}`);
+    } finally {
       setSavingApproval(false);
-      return;
     }
-
-    const totalPrice = activeDetails.reduce(
-      (sum, detail) => sum + (detail.price_at_time || 0) * detail.quantity,
-      0,
-    );
-    const { error } = await supabase
-      .from('requisitions')
-      .update({ status: 'approved', total_price: totalPrice })
-      .eq('id', selectedReq.id);
-
-    if (error) {
-      alert(`อนุมัติใบเบิกไม่สำเร็จ: ${error.message}`);
-      setSavingApproval(false);
-      return;
-    }
-
-    // ตัดจำนวนสินค้าคงเหลือในคลังอัตโนมัติ ตามจำนวนที่อนุมัติจริงของแต่ละรายการ
-    const stockResults = await Promise.all(
-      activeDetails
-        .filter((detail) => detail.item_id)
-        .map((detail) =>
-          supabase.rpc('decrement_item_stock', {
-            p_item_id: detail.item_id,
-            p_qty: detail.quantity,
-          })
-        )
-    );
-    const stockError = stockResults.find((result) => result.error)?.error;
-    if (stockError) {
-      // ใบเบิกอนุมัติสำเร็จแล้ว แต่ตัดสต็อกไม่สำเร็จ แจ้งเตือนให้แอดมินไปปรับจำนวนคงเหลือเอง
-      alert(`อนุมัติใบเบิกสำเร็จ แต่ตัดจำนวนคงเหลือในคลังไม่สำเร็จ: ${stockError.message}\nกรุณาปรับจำนวนคงเหลือด้วยตนเองที่หน้าคลังสินค้า`);
-    }
-
-    setSelectedReq(null);
-    await Promise.all([fetchRequisitions(currentPage), fetchCounts()]);
-    setSavingApproval(false);
   };
 
   // ── Item-level reject ───────────────────────────────────────────────────
@@ -385,13 +324,8 @@ export default function AdminRequisitionsPage() {
     if (!rejectingDetail) return;
     if (!rejectReason.trim()) { alert('กรุณาระบุเหตุผล'); return; }
     setSavingReject(true);
-    const { error } = await supabase
-      .from('requisition_details')
-      .update({ rejection_reason: rejectReason.trim() })
-      .eq('id', rejectingDetail.id);
-    if (error) {
-      alert(`เกิดข้อผิดพลาด: ${error.message}`);
-    } else {
+    try {
+      await callApi(`/api/admin/requisition-details/${rejectingDetail.id}/rejection`, 'POST', { reason: rejectReason.trim() });
       // อัปเดต local state
       setDetails((prev) =>
         prev.map((d) =>
@@ -400,20 +334,21 @@ export default function AdminRequisitionsPage() {
       );
       setRejectingDetail(null);
       setRejectReason('');
+    } catch (error) {
+      alert(`เกิดข้อผิดพลาด: ${errorText(error)}`);
     }
     setSavingReject(false);
   };
 
   const handleClearItemRejection = async (detail: RequisitionDetail) => {
     if (!window.confirm('ยืนยันการยกเลิกการปฏิเสธรายการนี้?')) return;
-    const { error } = await supabase
-      .from('requisition_details')
-      .update({ rejection_reason: null })
-      .eq('id', detail.id);
-    if (!error) {
+    try {
+      await callApi(`/api/admin/requisition-details/${detail.id}/rejection`, 'POST', { reason: null });
       setDetails((prev) =>
         prev.map((d) => d.id === detail.id ? { ...d, rejection_reason: null } : d)
       );
+    } catch (error) {
+      alert(`เกิดข้อผิดพลาด: ${errorText(error)}`);
     }
   };
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import BranchPicker from '@/components/requisition/BranchPicker';
+import { callApi, errorText } from '@/lib/requisition-api';
 
 const BRANCH_STORAGE_KEY = 'aemori-requisition-branch';
 const REQUESTER_STORAGE_KEY = 'aemori-requisition-requesters';
@@ -359,37 +360,22 @@ export default function RequisitionPage() {
     setSubmitError(null);
     setLoading(true);
 
-    const { data: reqData, error: reqError } = await supabase
-      .from('requisitions')
-      .insert([{ branch_name: branchName.trim(), requester_name: requesterName.trim(), status: 'pending', total_price: 0 }])
-      .select('id')
-      .single();
-
-    if (reqError || !reqData) {
-      setSubmitError(`ส่งใบเบิกไม่สำเร็จ: ${reqError?.message || 'ไม่สามารถสร้างใบเบิกได้'} — สินค้าในตะกร้ายังอยู่ กรุณาลองใหม่`);
-      setLoading(false);
-      return;
-    }
-
-    const { data: dbItems } = await supabase.from('items').select('id, price');
-    const detailRows = cart.map((item) => ({
-      requisition_id: reqData.id,
-      item_id: item.id,
-      quantity: item.quantity,
-      price_at_time: dbItems?.find((d) => d.id === item.id)?.price || 0,
-    }));
-
-    const { error: detailError } = await supabase.from('requisition_details').insert(detailRows);
-    setLoading(false);
-
-    if (detailError) {
-      setSubmitError('บันทึกรายการสินค้าไม่สำเร็จ: ' + detailError.message + ' — กรุณาแจ้งสำนักงานใหญ่');
-    } else {
-      setSubmittedRequisitionId(reqData.id);
+    // ส่งผ่าน server: ตรวจสาขา/สินค้า และใช้ราคาจากฐานข้อมูล บันทึกใบเบิก+รายการพร้อมกัน
+    try {
+      const result = await callApi<{ id: string }>('/api/requisition/submit', 'POST', {
+        branchName: branchName.trim(),
+        requesterName: requesterName.trim(),
+        items: cart.map((item) => ({ itemId: item.id, quantity: item.quantity })),
+      });
+      setSubmittedRequisitionId(result.id);
       saveLocalRequester(branchName, requesterName.trim());
       setCart([]);
       setSearchTerm('');
       setCurrentPage(1);
+    } catch (error) {
+      setSubmitError(`ส่งใบเบิกไม่สำเร็จ: ${errorText(error)} — สินค้าในตะกร้ายังอยู่ กรุณาลองใหม่`);
+    } finally {
+      setLoading(false);
     }
   };
 
