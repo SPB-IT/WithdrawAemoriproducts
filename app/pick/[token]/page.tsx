@@ -2,10 +2,11 @@
 
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import CameraCapture from '@/components/stock-request/CameraCapture';
 import { ErrorState, InlineError, LoadingState, PhotoThumb, Spinner } from '@/components/stock-request/ui';
-import { apiFetch, errorMessage, formatDateTime, formatNumber } from '@/lib/stock-request/client';
+import { apiFetch, errorMessage, formatDateTime, formatNumber, uploadPhoto } from '@/lib/stock-request/client';
 
-type PickState = 'picked' | 'missing';
+type PickState = 'picked' | 'missing' | 'substitute';
 
 interface PickItem {
   id: string;
@@ -27,12 +28,14 @@ interface PickData {
   last_saved_by: string | null;
 }
 
-type Choice = { state: PickState | null; note: string };
+type Choice = { state: PickState | null; note: string; subName: string; subCode: string; photo: Blob | null };
+const EMPTY_CHOICE: Choice = { state: null, note: '', subName: '', subCode: '', photo: null };
 
 const NAME_KEY = 'sr_picker_names'; // ชื่อเดียวกับหน้าแพ็คของของแอดมิน
 const MISSING_REASONS = ['ของหมด', 'หาไม่เจอ', 'ของเสีย/ชำรุด'];
+const SUBSTITUTE_REASONS = ['ของหมด ใช้รุ่นใกล้เคียง', 'ใช้สีหรือลายอื่น', 'ใช้ขนาดอื่น'];
 
-// หน้าลิงก์หยิบของ (เปิดจากลิงก์ที่แอดมินส่งให้ ไม่ต้องเข้าระบบ): เดินหยิบของ → กด ✓ หยิบได้ / ✗ ไม่มี → บันทึก
+// หน้าลิงก์หยิบของ (เปิดจากลิงก์ที่แอดมินส่งให้ ไม่ต้องเข้าระบบ): เดินหยิบของ → กด ✓ หยิบได้ / 🔄 ใช้ของแทน / ✗ ไม่มี → บันทึก
 export default function PickLinkPage() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<PickData | null>(null);
@@ -48,7 +51,7 @@ export default function PickLinkPage() {
     try {
       const result = await apiFetch<PickData>(`/api/pick/${encodeURIComponent(token)}`);
       setData(result);
-      setChoices(Object.fromEntries(result.items.map((item) => [item.id, { state: item.state, note: item.note ?? '' }])));
+      setChoices(Object.fromEntries(result.items.map((item) => [item.id, { ...EMPTY_CHOICE, state: item.state, note: item.note ?? '' }])));
       setLoadError(null);
     } catch (err) {
       setLoadError(errorMessage(err));
@@ -76,6 +79,7 @@ export default function PickLinkPage() {
       (data?.items ?? []).filter((item) => {
         const choice = choices[item.id];
         if (!choice?.state) return false;
+        if (choice.state === 'substitute') return true; // ใช้ของแทน = บันทึกใหม่ทุกครั้ง
         return choice.state !== item.state || (choice.state === 'missing' && choice.note.trim() !== (item.note ?? ''));
       }),
     [data, choices],
@@ -93,7 +97,7 @@ export default function PickLinkPage() {
   const counts = data.items.reduce(
     (sum, item) => {
       const state = choices[item.id]?.state;
-      return { picked: sum.picked + (state === 'picked' ? 1 : 0), missing: sum.missing + (state === 'missing' ? 1 : 0) };
+      return { picked: sum.picked + (state === 'picked' || state === 'substitute' ? 1 : 0), missing: sum.missing + (state === 'missing' ? 1 : 0) };
     },
     { picked: 0, missing: 0 },
   );
@@ -101,7 +105,7 @@ export default function PickLinkPage() {
 
   const setChoice = (itemId: string, patch: Partial<Choice>) => {
     setSaved(null);
-    setChoices((current) => ({ ...current, [itemId]: { ...(current[itemId] ?? { state: null, note: '' }), ...patch } }));
+    setChoices((current) => ({ ...current, [itemId]: { ...(current[itemId] ?? EMPTY_CHOICE), ...patch } }));
   };
 
   const save = async () => {
@@ -109,6 +113,11 @@ export default function PickLinkPage() {
     if (!picker) return setError('กรุณาใส่ชื่อผู้หยิบของก่อนบันทึก');
     const noNote = changes.find((item) => choices[item.id]?.state === 'missing' && !choices[item.id]?.note.trim());
     if (noNote) return setError(`กรุณาระบุหมายเหตุของ “${noNote.product_name}” ว่าทำไมไม่มี`);
+    const badSub = changes.find((item) => {
+      const choice = choices[item.id];
+      return choice?.state === 'substitute' && (!choice.subName.trim() || !choice.subCode.trim() || !choice.note.trim());
+    });
+    if (badSub) return setError(`กรุณาใส่ชื่อ รหัส และเหตุผลของสินค้าที่ใช้แทน “${badSub.product_name}”`);
     setSaving(true);
     setError(null);
     try {
@@ -117,11 +126,18 @@ export default function PickLinkPage() {
       } catch {
         // บันทึกชื่อในเครื่องไม่ได้ก็ไม่เป็นไร
       }
-      const result = await apiFetch<{ picked: number; missing: number }>(`/api/pick/${encodeURIComponent(token)}`, {
+      // อัปโหลดรูปสินค้าทดแทน (ถ้ามี) ก่อนบันทึก
+      const items = [];
+      for (const item of changes) {
+        const choice = choices[item.id];
+        const photoPath = choice.state === 'substitute' && choice.photo ? await uploadPhoto(`/api/pick/${encodeURIComponent(token)}/upload-url`, choice.photo) : null;
+        items.push({ itemId: item.id, state: choice.state, note: choice.note.trim(), productName: choice.subName.trim(), productCode: choice.subCode.trim(), photoPath });
+      }
+      const result = await apiFetch<{ picked: number; missing: number; substituted: number }>(`/api/pick/${encodeURIComponent(token)}`, {
         method: 'POST',
-        json: { pickerName: picker, items: changes.map((item) => ({ itemId: item.id, state: choices[item.id].state, note: choices[item.id].note.trim() })) },
+        json: { pickerName: picker, items },
       });
-      setSaved(`บันทึกแล้ว · หยิบได้ ${result.picked} · ไม่มี ${result.missing} รายการ`);
+      setSaved(`บันทึกแล้ว · หยิบได้ ${result.picked} · ใช้ของแทน ${result.substituted} · ไม่มี ${result.missing} รายการ`);
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -191,8 +207,15 @@ export default function PickLinkPage() {
 
       <ul className="space-y-2.5">
         {data.items.map((item, index) => {
-          const choice = choices[item.id] ?? { state: null, note: '' };
-          const tone = choice.state === 'picked' ? 'border-emerald-300 bg-emerald-50/60' : choice.state === 'missing' ? 'border-rose-300 bg-rose-50/60' : 'border-pink-100 bg-white';
+          const choice = choices[item.id] ?? EMPTY_CHOICE;
+          const tone =
+            choice.state === 'picked'
+              ? 'border-emerald-300 bg-emerald-50/60'
+              : choice.state === 'substitute'
+                ? 'border-sky-300 bg-sky-50/60'
+                : choice.state === 'missing'
+                  ? 'border-rose-300 bg-rose-50/60'
+                  : 'border-pink-100 bg-white';
           return (
             <li key={item.id} className={`rounded-2xl border p-3 shadow-sm transition ${tone}`}>
               <div className="flex gap-3">
@@ -205,7 +228,7 @@ export default function PickLinkPage() {
                   <p className="text-[11px] text-slate-500">สาขาเหลือ {formatNumber(item.stock_on_hand)}</p>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-3 gap-1.5">
                 <button
                   type="button"
                   aria-pressed={choice.state === 'picked'}
@@ -216,6 +239,14 @@ export default function PickLinkPage() {
                 </button>
                 <button
                   type="button"
+                  aria-pressed={choice.state === 'substitute'}
+                  onClick={() => setChoice(item.id, { state: choice.state === 'substitute' ? null : 'substitute', note: choice.state === 'substitute' ? choice.note : '' })}
+                  className={`rounded-xl py-3 text-sm font-black transition ${choice.state === 'substitute' ? 'bg-sky-500 text-white shadow' : 'bg-white text-sky-700 ring-1 ring-sky-200'}`}
+                >
+                  🔄 ใช้ของแทน
+                </button>
+                <button
+                  type="button"
                   aria-pressed={choice.state === 'missing'}
                   onClick={() => setChoice(item.id, { state: choice.state === 'missing' ? null : 'missing' })}
                   className={`rounded-xl py-3 text-sm font-black transition ${choice.state === 'missing' ? 'bg-rose-500 text-white shadow' : 'bg-white text-rose-600 ring-1 ring-rose-200'}`}
@@ -223,6 +254,43 @@ export default function PickLinkPage() {
                   ✗ ไม่มี
                 </button>
               </div>
+              {choice.state === 'substitute' && (
+                <div className="mt-2 space-y-1.5 rounded-xl bg-white p-2.5 ring-1 ring-sky-200">
+                  <p className="text-xs font-black text-sky-700">สินค้าที่หยิบไปแทน</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <input
+                      value={choice.subName}
+                      onChange={(event) => setChoice(item.id, { subName: event.target.value })}
+                      maxLength={200}
+                      placeholder="ชื่อสินค้าที่ใช้แทน *"
+                      className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400"
+                    />
+                    <input
+                      value={choice.subCode}
+                      onChange={(event) => setChoice(item.id, { subCode: event.target.value })}
+                      maxLength={100}
+                      placeholder="รหัสสินค้า *"
+                      className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SUBSTITUTE_REASONS.map((reason) => (
+                      <button key={reason} type="button" onClick={() => setChoice(item.id, { note: reason })} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-sky-700 ring-1 ring-sky-200">
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    value={choice.note}
+                    onChange={(event) => setChoice(item.id, { note: event.target.value })}
+                    maxLength={300}
+                    placeholder="เหตุผลที่ใช้ของแทน (บังคับ)"
+                    className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400"
+                  />
+                  <p className="text-[11px] font-bold text-slate-500">รูปสินค้าที่ใช้แทน (ไม่บังคับ)</p>
+                  <CameraCapture value={choice.photo} onChange={(photo) => setChoice(item.id, { photo })} />
+                </div>
+              )}
               {choice.state === 'missing' && (
                 <div className="mt-2 space-y-1.5">
                   <div className="flex flex-wrap gap-1.5">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { apiFetch, errorMessage, formatDateTime } from '@/lib/stock-request/client';
 import { InlineError, Modal, Spinner, primaryButton, secondaryButton } from './ui';
 
@@ -20,6 +20,7 @@ export default function PickLinkButton({ billId, billNo, branchName, className =
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const urlRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     setActive((await apiFetch<{ link: LinkInfo | null }>(`/admin/stock-request/api/bills/${billId}/pick-link`)).link);
@@ -65,10 +66,32 @@ export default function PickLinkButton({ billId, billNo, branchName, className =
     });
 
   const message = url ? `🛒 หยิบของ ${branchName} (บิล ${billNo})\n${url}` : '';
+  // บางเบราว์เซอร์/หน้าต่างฝังไม่ให้เขียนคลิปบอร์ด → ลองวิธีสำรอง แล้วถ้ายังไม่ได้ เลือกลิงก์ให้กดคัดลอกเอง
   const copy = () =>
     run(async () => {
-      await navigator.clipboard.writeText(message);
-      setCopied(true);
+      try {
+        await navigator.clipboard.writeText(message);
+        setCopied(true);
+        return;
+      } catch {
+        // ใช้วิธีสำรองด้านล่าง
+      }
+      const area = document.createElement('textarea');
+      area.value = message;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand('copy');
+      area.remove();
+      if (ok) {
+        setCopied(true);
+        return;
+      }
+      urlRef.current?.focus();
+      urlRef.current?.select();
+      throw new Error('เบราว์เซอร์นี้ไม่ให้คัดลอกอัตโนมัติ — เลือกลิงก์ไว้ให้แล้ว กด Ctrl+C (หรือกดค้างแล้วเลือกคัดลอก)');
     });
   // มือถือ: เปิดเมนูแชร์ของเครื่อง (เลือก LINE ได้เลย)
   const share = () =>
@@ -95,7 +118,7 @@ export default function PickLinkButton({ billId, billNo, branchName, className =
           {url ? (
             <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
               <p className="text-xs font-black text-emerald-700">✅ สร้างลิงก์แล้ว — คัดลอกหรือแชร์ตอนนี้ (ปิดหน้าต่างแล้วจะดูลิงก์นี้อีกไม่ได้)</p>
-              <input readOnly value={url} onFocus={(event) => event.target.select()} className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 font-mono text-xs text-slate-700" aria-label="ลิงก์หยิบของ" />
+              <input ref={urlRef} readOnly value={url} onFocus={(event) => event.target.select()} className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 font-mono text-xs text-slate-700" aria-label="ลิงก์หยิบของ" />
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={copy} disabled={busy} className={primaryButton}>
                   {copied ? '✓ คัดลอกแล้ว' : '📋 คัดลอกลิงก์'}
