@@ -58,7 +58,6 @@ export function SubstitutionPair({ item }: { item: BillItemDetail }) {
           <p className="font-bold text-pink-600">สินค้าทดแทน</p>
           <p className="font-bold text-slate-800">{sub.product_name}</p>
           <p className="text-slate-500">รหัส {sub.product_code}</p>
-          <p className="font-bold text-slate-700">จัดส่ง {formatNumber(sub.ship_qty)}</p>
         </div>
       </div>
       <p className="text-xs text-pink-700 sm:col-span-3">
@@ -85,7 +84,7 @@ function describeChange(log: AuditLogRow): string[] {
   if (log.action === 'substitution_set') {
     const name = after.product_name as string | undefined;
     const code = after.product_code as string | undefined;
-    const lines = [`ทดแทนด้วย ${name ?? '-'} (${code ?? '-'}) จำนวน ${formatValue(after.ship_qty)}`];
+    const lines = [`ทดแทนด้วย ${name ?? '-'} (${code ?? '-'})`];
     if (before.product_name) lines.unshift(`เดิม: ${formatValue(before.product_name)} (${formatValue(before.product_code)})`);
     return lines;
   }

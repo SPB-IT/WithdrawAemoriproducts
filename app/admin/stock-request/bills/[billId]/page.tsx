@@ -135,6 +135,11 @@ export default function HqBillDetailPage() {
                 </Link>
               )}
               {bill.status === 'billed' && (
+                <Link href={`/admin/stock-request/bills/${bill.id}/pick`} className={secondaryButton}>
+                  📦 เช็คของ
+                </Link>
+              )}
+              {bill.status === 'billed' && (
                 <button type="button" onClick={() => setDialog({ kind: 'ship' })} className={`${primaryButton}`}>
                   🚚 ยืนยันจัดส่งแล้ว
                 </button>
@@ -182,7 +187,7 @@ export default function HqBillDetailPage() {
         ) : (
           <ul className="space-y-3">
             {active.map((item, index) => (
-              <ItemRow key={item.id} index={index} item={item} bill={bill} onAction={setDialog} mutate={mutate} />
+              <ItemRow key={item.id} index={index} item={item} bill={bill} onAction={setDialog} />
             ))}
           </ul>
         )}
@@ -219,29 +224,8 @@ export default function HqBillDetailPage() {
 
 type Mutate = (url: string, method: string, json: Record<string, unknown>, success: string) => Promise<void>;
 
-function ItemRow({ item, index, bill, onAction, mutate }: { item: BillItemDetail; index: number; bill: BillDetail; onAction: (dialog: Dialog) => void; mutate: Mutate }) {
-  const [shipQty, setShipQty] = useState(item.hq_ship_qty?.toString() ?? '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function ItemRow({ item, index, bill, onAction }: { item: BillItemDetail; index: number; bill: BillDetail; onAction: (dialog: Dialog) => void }) {
   const pending = bill.status === 'pending';
-  const dirty = shipQty !== (item.hq_ship_qty?.toString() ?? '');
-
-  useEffect(() => {
-    const timer = setTimeout(() => setShipQty(item.hq_ship_qty?.toString() ?? ''), 0);
-    return () => clearTimeout(timer);
-  }, [item.hq_ship_qty]);
-
-  const saveShip = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await mutate(`/admin/stock-request/api/items/${item.id}`, 'PATCH', { patch: { hqShipQty: shipQty === '' ? null : Number(shipQty) } }, `บันทึกจำนวนจัดส่ง “${item.product_name}” แล้ว`);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
     <li className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
@@ -263,28 +247,7 @@ function ItemRow({ item, index, bill, onAction, mutate }: { item: BillItemDetail
           </div>
         </div>
         <div className="flex shrink-0 flex-col gap-2 md:w-56">
-          <label className="text-xs font-bold text-slate-600">
-            จำนวนที่ HQ จะจัดส่ง
-            <div className="mt-1 flex gap-1.5">
-              <input
-                value={shipQty}
-                onChange={(event) => setShipQty(event.target.value.replace(/[^0-9]/g, ''))}
-                inputMode="numeric"
-                placeholder="-"
-                disabled={!pending || saving || Boolean(item.substitution)}
-                className={`${inputClass} text-center font-bold`}
-                aria-label={`จำนวนจัดส่ง ${item.product_name}`}
-              />
-              {pending && dirty && (
-                <button type="button" onClick={saveShip} disabled={saving} className="rounded-xl bg-pink-500 px-3 text-sm font-black text-white disabled:opacity-50">
-                  {saving ? <Spinner className="h-4 w-4" /> : '✓'}
-                </button>
-              )}
-            </div>
-          </label>
-          {item.substitution && <p className="text-[11px] text-pink-600">ใช้จำนวนของสินค้าทดแทน</p>}
-          {!pending && !item.substitution && <p className="text-[11px] text-slate-400">บิลตัดแล้ว แก้ผ่านปุ่ม “แก้ไข” พร้อมเหตุผล</p>}
-          <InlineError message={error} />
+          {!pending && <p className="text-[11px] text-slate-400">บิลตัดแล้ว แก้ผ่านปุ่ม “แก้ไข” พร้อมเหตุผล</p>}
           <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
             <button type="button" onClick={() => onAction({ kind: 'edit', item })} className="rounded-lg bg-slate-100 px-2 py-2 text-slate-700 hover:bg-slate-200">
               แก้ไข
@@ -310,7 +273,7 @@ function ItemRow({ item, index, bill, onAction, mutate }: { item: BillItemDetail
           <ul className="mt-1 space-y-1">
             {item.substitution_history.map((sub) => (
               <li key={sub.id} className={sub.is_active ? 'font-bold text-pink-700' : 'line-through'}>
-                {sub.product_name} ({sub.product_code}) × {sub.ship_qty} — {sub.reason} · {sub.created_by_name ?? ''} {formatDateTime(sub.created_at)}
+                {sub.product_name} ({sub.product_code}) — {sub.reason} · {sub.created_by_name ?? ''} {formatDateTime(sub.created_at)}
               </li>
             ))}
           </ul>
@@ -345,7 +308,7 @@ function ModalFooter({ busy, onClose, label }: { busy: boolean; onClose: () => v
 function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill: BillDetail; onClose: () => void; mutate: Mutate }) {
   const open = dialog?.kind === 'add' || dialog?.kind === 'edit';
   const item = dialog?.kind === 'edit' ? dialog.item : null;
-  const [form, setForm] = useState({ name: '', code: '', stock: '', ship: '', note: '', reason: '' });
+  const [form, setForm] = useState({ name: '', code: '', stock: '', note: '', reason: '' });
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -358,7 +321,6 @@ function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
         name: item?.product_name ?? '',
         code: item?.product_code ?? '',
         stock: item?.stock_on_hand?.toString() ?? '',
-        ship: item?.hq_ship_qty?.toString() ?? '',
         note: item?.hq_note ?? '',
         reason: '',
       });
@@ -381,7 +343,6 @@ function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
         if (form.name.trim() !== item.product_name) patch.productName = form.name.trim();
         if (form.code.trim() !== item.product_code) patch.productCode = form.code.trim();
         if (num(form.stock) !== item.stock_on_hand) patch.stockOnHand = num(form.stock);
-        if (num(form.ship) !== item.hq_ship_qty) patch.hqShipQty = num(form.ship);
         if ((form.note.trim() || null) !== item.hq_note) patch.hqNote = form.note.trim() || null;
         if (Object.keys(patch).length === 0) {
           onClose();
@@ -393,7 +354,7 @@ function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
         await mutate(
           `/admin/stock-request/api/bills/${bill.id}/items`,
           'POST',
-          { productName: form.name.trim(), productCode: form.code.trim(), stockOnHand: num(form.stock), hqShipQty: num(form.ship), hqNote: form.note.trim() || null, photoPath, reason: form.reason.trim() || null },
+          { productName: form.name.trim(), productCode: form.code.trim(), stockOnHand: num(form.stock), hqNote: form.note.trim() || null, photoPath, reason: form.reason.trim() || null },
           `เพิ่ม “${form.name.trim()}” แล้ว`,
         );
       }
@@ -420,14 +381,9 @@ function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
         <Field label="รหัสสินค้า" required>
           <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={inputClass} maxLength={100} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="คงเหลือหน้าร้าน (สาขา)" hint="ข้อมูลจากสาขา แก้เมื่อจำเป็นเท่านั้น">
-            <input value={form.stock} onChange={(event) => setForm({ ...form, stock: numeric(event.target.value) })} className={inputClass} inputMode="numeric" />
-          </Field>
-          <Field label="จำนวนที่ HQ จะจัดส่ง">
-            <input value={form.ship} onChange={(event) => setForm({ ...form, ship: numeric(event.target.value) })} className={inputClass} inputMode="numeric" />
-          </Field>
-        </div>
+        <Field label="คงเหลือหน้าร้าน (สาขา)" hint="ข้อมูลจากสาขา แก้เมื่อจำเป็นเท่านั้น">
+          <input value={form.stock} onChange={(event) => setForm({ ...form, stock: numeric(event.target.value) })} className={inputClass} inputMode="numeric" />
+        </Field>
         <Field label="หมายเหตุ HQ">
           <textarea value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} className={`${inputClass} min-h-16`} maxLength={1000} />
         </Field>
@@ -440,7 +396,7 @@ function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
 
 function SubstitutionModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill: BillDetail; onClose: () => void; mutate: Mutate }) {
   const item = dialog?.kind === 'sub' ? dialog.item : null;
-  const [form, setForm] = useState({ name: '', code: '', qty: '', reason: '' });
+  const [form, setForm] = useState({ name: '', code: '', reason: '' });
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -448,7 +404,7 @@ function SubstitutionModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; 
   useEffect(() => {
     if (!item) return;
     const timer = setTimeout(() => {
-      setForm({ name: '', code: '', qty: item.hq_ship_qty?.toString() ?? '', reason: '' });
+      setForm({ name: '', code: '', reason: '' });
       setPhoto(null);
       setError(null);
     }, 0);
@@ -459,7 +415,6 @@ function SubstitutionModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; 
     event.preventDefault();
     if (!item) return;
     if (!form.name.trim() || !form.code.trim()) return setError('กรุณากรอกชื่อและรหัสสินค้าทดแทน');
-    if (form.qty === '') return setError('กรุณากรอกจำนวนที่จัดส่ง');
     if (!form.reason.trim()) return setError('กรุณาระบุเหตุผลในการเปลี่ยนสินค้า');
     setBusy(true);
     setError(null);
@@ -468,7 +423,7 @@ function SubstitutionModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; 
       await mutate(
         `/admin/stock-request/api/items/${item.id}/substitution`,
         'POST',
-        { productName: form.name.trim(), productCode: form.code.trim(), shipQty: Number(form.qty), reason: form.reason.trim(), photoPath },
+        { productName: form.name.trim(), productCode: form.code.trim(), reason: form.reason.trim(), photoPath },
         `กำหนดสินค้าทดแทนให้ “${item.product_name}” แล้ว`,
       );
     } catch (err) {
@@ -501,9 +456,6 @@ function SubstitutionModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; 
               <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={inputClass} maxLength={100} />
             </Field>
           </div>
-          <Field label="จำนวนที่จัดส่ง" required>
-            <input value={form.qty} onChange={(event) => setForm({ ...form, qty: event.target.value.replace(/[^0-9]/g, '') })} className={inputClass} inputMode="numeric" />
-          </Field>
           <Field label="เหตุผลในการเปลี่ยนสินค้า" required>
             <textarea value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-16`} maxLength={1000} placeholder="เช่น สินค้าเดิมหมดสต็อก" />
           </Field>

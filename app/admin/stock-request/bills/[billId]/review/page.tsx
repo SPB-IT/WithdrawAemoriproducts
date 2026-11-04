@@ -8,7 +8,7 @@ import { ConfirmDialog, ErrorState, InlineError, LoadingState, PhotoThumb, Statu
 import { ClientApiError, apiFetch, errorMessage, formatDateTime, formatNumber } from '@/lib/stock-request/client';
 import type { BillDetail } from '@/lib/stock-request/types';
 
-// หน้าตรวจสอบก่อนตัดบิล: สินค้า+รูป, คงเหลือ, จำนวนจัดส่ง, สินค้าทดแทน, หมายเหตุ → ยืนยันตัดบิล
+// หน้าตรวจสอบก่อนตัดบิล: สินค้า+รูป, คงเหลือ, สินค้าทดแทน, หมายเหตุ → ยืนยันตัดบิล
 export default function ReviewBillPage() {
   const { billId } = useParams<{ billId: string }>();
   const router = useRouter();
@@ -61,7 +61,6 @@ export default function ReviewBillPage() {
   if (!bill) return <LoadingState />;
 
   const items = bill.items.filter((item) => !item.is_removed);
-  const missingQty = items.filter((item) => item.hq_ship_qty === null && !item.substitution);
   const substituted = items.filter((item) => item.substitution);
 
   if (bill.status !== 'pending') {
@@ -92,12 +91,9 @@ export default function ReviewBillPage() {
           </div>
           <StatusBadge status={bill.status} />
         </div>
-        <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+        <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
           <div className="rounded-xl bg-slate-50 px-3 py-2">
             รายการทั้งหมด <b>{items.length}</b>
-          </div>
-          <div className={`rounded-xl px-3 py-2 ${missingQty.length ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
-            ยังไม่กำหนดจำนวนจัดส่ง <b>{missingQty.length}</b>
           </div>
           <div className="rounded-xl bg-pink-50 px-3 py-2 text-pink-700">
             มีสินค้าทดแทน <b>{substituted.length}</b>
@@ -109,21 +105,20 @@ export default function ReviewBillPage() {
 
       <div className="overflow-hidden rounded-2xl border border-pink-100 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[680px] text-sm">
             <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500">
               <tr>
                 <th className="px-3 py-3">#</th>
                 <th className="px-3 py-3">รูป</th>
                 <th className="px-3 py-3">สินค้า</th>
                 <th className="px-3 py-3 text-center">คงเหลือ (สาขา)</th>
-                <th className="px-3 py-3 text-center">HQ จัดส่ง</th>
                 <th className="px-3 py-3">สินค้าทดแทน</th>
                 <th className="px-3 py-3">หมายเหตุ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 align-top">
               {items.map((item, index) => (
-                <tr key={item.id} className={item.hq_ship_qty === null && !item.substitution ? 'bg-amber-50/50' : ''}>
+                <tr key={item.id}>
                   <td className="px-3 py-3 text-xs text-slate-400">{index + 1}</td>
                   <td className="px-3 py-3">
                     <PhotoThumb url={item.photo_url} alt={item.product_name} className="h-14 w-14" />
@@ -134,12 +129,11 @@ export default function ReviewBillPage() {
                     <p className="text-[11px] text-slate-400">{item.reported_by_name}</p>
                   </td>
                   <td className="px-3 py-3 text-center">{formatNumber(item.stock_on_hand)}</td>
-                  <td className="px-3 py-3 text-center font-black text-pink-700">{item.substitution ? '-' : item.hq_ship_qty ?? <span className="text-amber-600">ยังไม่กำหนด</span>}</td>
                   <td className="px-3 py-3 text-xs">
                     {item.substitution ? (
                       <>
                         <p className="font-bold text-pink-700">
-                          {item.substitution.product_name} × {item.substitution.ship_qty}
+                          {item.substitution.product_name}
                         </p>
                         <p className="text-slate-500">{item.substitution.product_code}</p>
                         <p className="text-slate-500">เหตุผล: {item.substitution.reason}</p>
@@ -164,10 +158,9 @@ export default function ReviewBillPage() {
         <p className="text-sm">
           ผู้ตัดบิล: <b>{admin.display_name}</b>
         </p>
-        {missingQty.length > 0 && <p className="text-xs font-semibold text-amber-700">มี {missingQty.length} รายการที่ยังไม่กำหนดจำนวนจัดส่ง — ตัดบิลได้ แต่ใบจัดสินค้าจะแสดงเป็น “-”</p>}
         <label className="flex items-start gap-3 text-sm font-semibold">
           <input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} className="mt-0.5 h-5 w-5 accent-pink-600" />
-          ตรวจสอบสินค้า รูปภาพ จำนวนคงเหลือ จำนวนจัดส่ง สินค้าทดแทน และหมายเหตุครบถ้วนแล้ว
+          ตรวจสอบสินค้า รูปภาพ จำนวนคงเหลือ สินค้าทดแทน และหมายเหตุครบถ้วนแล้ว
         </label>
         <div className="flex flex-wrap justify-end gap-2">
           <Link href={`/admin/stock-request/bills/${bill.id}`} className={secondaryButton}>

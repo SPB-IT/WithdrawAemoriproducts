@@ -3,7 +3,7 @@ import { requireAdmin } from '@/lib/stock-request/admin-auth';
 import { ApiError, fromDbError, handle } from '@/lib/stock-request/errors';
 import { assertPhotoUploaded, rpc } from '@/lib/stock-request/queries';
 import { getServiceClient } from '@/lib/stock-request/supabase-admin';
-import { optionalText, readJson, requireInt, requireText, requireUuid, requireVersion } from '@/lib/stock-request/validation';
+import { optionalText, readJson, requireText, requireUuid, requireVersion } from '@/lib/stock-request/validation';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +28,7 @@ export const POST = handle(async (request: NextRequest, context: { params: Promi
     p_expected_version: requireVersion(body.expectedVersion),
     p_product_name: requireText(body.productName, 200, 'ชื่อสินค้าทดแทน'),
     p_product_code: requireText(body.productCode, 100, 'รหัสสินค้าทดแทน'),
-    p_ship_qty: requireInt(body.shipQty, 'จำนวนจัดส่ง'),
+    p_ship_qty: 0, // ไม่ใช้จำนวนจัดส่งแล้ว (คอลัมน์ยังบังคับ not null)
     p_photo_path: photoPath,
     p_reason: requireText(body.reason, 1000, 'เหตุผลในการเปลี่ยนสินค้า'),
   });

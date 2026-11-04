@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { SR_HQ_API, SR_HQ_HOME } from '@/lib/stock-request/constants';
 import { ClientApiError, apiFetch, errorMessage } from '@/lib/stock-request/client';
@@ -21,6 +21,7 @@ export function useAdmin() {
 const links = [
   { href: SR_HQ_HOME, label: 'แดชบอร์ด', icon: '📊' },
   { href: `${SR_HQ_HOME}/bills`, label: 'บิลทุกสาขา', icon: '🧾' },
+  { href: `${SR_HQ_HOME}/pick`, label: 'เช็คของ', icon: '📦' },
   { href: `${SR_HQ_HOME}/audit`, label: 'ประวัติการแก้ไข', icon: '🕘' },
 ];
 
@@ -32,6 +33,7 @@ type State = { kind: 'loading' } | { kind: 'ready'; admin: AdminProfile } | { ki
  */
 export default function HqShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [state, setState] = useState<State>({ kind: 'loading' });
 
   const load = useCallback(async () => {
@@ -88,10 +90,10 @@ export default function HqShell({ children }: { children: ReactNode }) {
                   );
                 })}
               </div>
-              {admin && <NotificationBell endpoint={`${SR_HQ_API}/notifications`} />}
+              {admin && <NotificationBell endpoint={`${SR_HQ_API}/notifications`} mode="list" onOpenBill={(billId) => router.push(`${SR_HQ_HOME}/bills/${billId}`)} />}
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-1 rounded-xl border border-pink-100 bg-pink-50 p-1 text-center text-[11px] font-bold md:hidden">
+          <div className="mt-4 grid grid-cols-4 gap-1 rounded-xl border border-pink-100 bg-pink-50 p-1 text-center text-[11px] font-bold md:hidden">
             {links.map((link) => {
               const active = link.href === SR_HQ_HOME ? pathname === link.href : pathname.startsWith(link.href);
               return (

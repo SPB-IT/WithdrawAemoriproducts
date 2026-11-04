@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { ADMIN_COOKIE_NAME, ADMIN_SESSION_SECONDS, createAdminSession } from '@/lib/admin-auth';
+import { ADMIN_COOKIE_NAME, ADMIN_REMEMBER_SECONDS, ADMIN_SESSION_SECONDS, createAdminSession } from '@/lib/admin-auth';
 
 const attempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_ATTEMPTS = 5;
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   }
   if (current && current.resetAt <= now) attempts.delete(clientKey);
 
-  const body = await request.json().catch(() => null) as { password?: string } | null;
+  const body = await request.json().catch(() => null) as { password?: string; remember?: boolean } | null;
   const expectedPassword = process.env.ADMIN_ACCESS_PASSWORD ?? '';
   const sessionSecret = process.env.ADMIN_SESSION_SECRET ?? '';
   if (!expectedPassword || !sessionSecret) {
@@ -38,11 +38,12 @@ export async function POST(request: NextRequest) {
 
   attempts.delete(clientKey);
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(ADMIN_COOKIE_NAME, await createAdminSession(sessionSecret), {
+  const lifetime = body?.remember === true ? ADMIN_REMEMBER_SECONDS : ADMIN_SESSION_SECONDS;
+  response.cookies.set(ADMIN_COOKIE_NAME, await createAdminSession(sessionSecret, lifetime), {
     httpOnly: true,
     sameSite: 'strict',
     secure: process.env.NODE_ENV === 'production',
-    maxAge: ADMIN_SESSION_SECONDS,
+    maxAge: lifetime,
     // ใช้ได้ทั้งเว็บ: /admin และฝั่งสาขาของระบบแจ้งสินค้าใกล้หมดช่วงโหมดทดสอบ (proxy.ts)
     path: '/',
   });

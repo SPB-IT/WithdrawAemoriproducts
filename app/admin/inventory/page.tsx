@@ -421,9 +421,12 @@ export default function AdminInventoryPage() {
 
         {/* ── Branch Modal (อัปเดตใหม่) ── */}
         {isBranchModalOpen && (
-          <div className="fixed inset-0 bg-pink-900/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl border border-pink-100 space-y-4 max-h-[80vh] overflow-y-auto">
-              <h3 className="font-black text-base text-slate-800">🏬 จัดการสาขา</h3>
+          <div className="fixed inset-0 bg-pink-900/20 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setIsBranchModalOpen(false)}>
+            <div className="bg-white p-6 pt-0 rounded-2xl w-full max-w-sm shadow-2xl border border-pink-100 space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 z-10 -mx-6 flex items-center gap-3 border-b border-pink-50 bg-white px-6 pb-3 pt-5">
+                <h3 className="font-black text-base text-slate-800">🏬 จัดการสาขา</h3>
+                <button type="button" onClick={() => setIsBranchModalOpen(false)} aria-label="ปิดหน้าต่าง" className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-lg font-bold text-slate-500 transition hover:bg-rose-100 hover:text-rose-600">✕</button>
+              </div>
               <div className="flex gap-2">
                 <input
                   placeholder="ชื่อสาขาใหม่..."
@@ -634,6 +637,7 @@ export default function AdminInventoryPage() {
                   <h3 className="font-black text-base text-slate-800">รับสินค้าเข้าคลัง</h3>
                   <p className="truncate text-xs font-semibold text-slate-400">{restockingItem.name}</p>
                 </div>
+                <button type="button" onClick={() => setRestockingItem(null)} aria-label="ปิดหน้าต่าง" className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-lg font-bold text-slate-500 transition hover:bg-rose-100 hover:text-rose-600">✕</button>
               </div>
               <p className="text-xs font-bold text-slate-500">คงเหลือปัจจุบัน: <span className="text-slate-700">{(restockingItem.stock_quantity ?? 0).toLocaleString('th-TH')} {restockingItem.unit}</span></p>
               <div className="space-y-1.5">
@@ -671,6 +675,7 @@ export default function AdminInventoryPage() {
                   {editingItem.id ? '✏️' : '✨'}
                 </div>
                 <h3 className="font-black text-base text-slate-800">{editingItem.id ? 'แก้ไขข้อมูลสินค้า' : 'เพิ่มสินค้าใหม่'}</h3>
+                <button type="button" onClick={() => setEditingItem(null)} aria-label="ปิดหน้าต่าง" className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-lg font-bold text-slate-500 transition hover:bg-rose-100 hover:text-rose-600">✕</button>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center gap-3 p-2.5 bg-pink-50/40 border border-pink-100/60 rounded-xl">

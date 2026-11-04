@@ -57,17 +57,28 @@ export default function StaffNameField({
   known?: string[];
   label?: string;
 }) {
-  const others = [...new Set([...recent, ...known])].filter((name) => name !== value.trim()).slice(0, 12);
+  // แสดงทุกชื่อที่เคยใช้ (รวมชื่อที่เลือกอยู่ — ไฮไลต์ไว้) กดเลือกได้เลยไม่ต้องพิมพ์
+  const names = [...new Set([...recent, ...known])].slice(0, 12);
+  const current = value.trim();
   return (
     <Field label={label} required>
       <input value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} maxLength={100} placeholder="ชื่อของคุณ" autoComplete="name" />
-      {others.length > 0 && (
+      {names.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {others.map((name) => (
-            <button key={name} type="button" onClick={() => onChange(name)} className="rounded-full bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 ring-1 ring-pink-100 transition hover:bg-pink-100">
-              👤 {name}
-            </button>
-          ))}
+          {names.map((name) => {
+            const active = name === current;
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => onChange(name)}
+                aria-pressed={active}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition ${active ? 'bg-pink-500 text-white ring-pink-500' : 'bg-pink-50 text-pink-700 ring-pink-100 hover:bg-pink-100'}`}
+              >
+                {active ? '✓' : '👤'} {name}
+              </button>
+            );
+          })}
         </div>
       )}
     </Field>

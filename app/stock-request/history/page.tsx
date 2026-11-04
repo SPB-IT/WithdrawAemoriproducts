@@ -148,9 +148,6 @@ function HistoryBill({ bill, onReceive }: { bill: BillDetail; onReceive: () => v
                       <span>
                         คงเหลือที่แจ้ง <b>{formatNumber(item.stock_on_hand)}</b>
                       </span>
-                      <span className="text-pink-700">
-                        HQ จัดส่ง <b>{item.substitution ? `${formatNumber(item.substitution.ship_qty)} (ทดแทน)` : formatNumber(item.hq_ship_qty)}</b>
-                      </span>
                     </div>
                     {item.staff_note && <p className="mt-1 text-xs text-slate-500">📝 {item.staff_note}</p>}
                     {item.hq_note && <p className="mt-1 text-xs text-sky-700">💬 HQ: {item.hq_note}</p>}

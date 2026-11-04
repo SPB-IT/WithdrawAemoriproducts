@@ -97,13 +97,16 @@ const CartFormContent = ({
           placeholder="ชื่อ - นามสกุล"
           className="block w-full py-2.5 px-3.5 bg-white border border-slate-200 hover:border-pink-300 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/15 rounded-xl text-sm font-semibold text-slate-700 placeholder:text-slate-300 outline-none transition-all shadow-sm"
         />
-        {knownRequesters.some((name) => name !== requesterName.trim()) && (
+        {knownRequesters.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {knownRequesters.filter((name) => name !== requesterName.trim()).map((name) => (
-              <button key={name} type="button" onClick={() => setRequesterName(name)} className="rounded-full bg-pink-50 px-3 py-1 text-xs font-bold text-pink-600 ring-1 ring-pink-100 transition hover:bg-pink-100">
-                👤 {name}
-              </button>
-            ))}
+            {knownRequesters.map((name) => {
+              const active = name === requesterName.trim();
+              return (
+                <button key={name} type="button" onClick={() => setRequesterName(name)} aria-pressed={active} className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition ${active ? 'bg-pink-500 text-white ring-pink-500' : 'bg-pink-50 text-pink-600 ring-pink-100 hover:bg-pink-100'}`}>
+                  {active ? '✓' : '👤'} {name}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

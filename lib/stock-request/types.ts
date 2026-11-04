@@ -57,6 +57,8 @@ export interface BillItemRow {
   created_by_admin: string | null;
   hq_ship_qty: number | null;
   hq_note: string | null;
+  picked_at: string | null;
+  picked_by: string | null;
   is_removed: boolean;
   removed_at: string | null;
   removed_by: string | null;

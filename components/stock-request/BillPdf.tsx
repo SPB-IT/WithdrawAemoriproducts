@@ -75,7 +75,6 @@ function BillPages({ bill }: { bill: BillDetail }) {
         <Text style={styles.cellPhoto}>รูป</Text>
         <Text style={styles.cellName}>สินค้า / รหัส</Text>
         <Text style={styles.cellNum}>คงเหลือ</Text>
-        <Text style={styles.cellNum}>จัดส่ง</Text>
         <Text style={styles.cellNote}>หมายเหตุ</Text>
       </View>
       {items.map((item, index) => (
@@ -92,7 +91,6 @@ function BillPages({ bill }: { bill: BillDetail }) {
             )}
           </View>
           <Text style={styles.cellNum}>{item.stock_on_hand ?? '-'}</Text>
-          <Text style={[styles.cellNum, { fontWeight: 'bold' }]}>{item.substitution ? item.substitution.ship_qty : item.hq_ship_qty ?? '-'}</Text>
           <Text style={styles.cellNote}>{[item.staff_note, item.hq_note ? `HQ: ${item.hq_note}` : null].filter(Boolean).join(' / ') || '-'}</Text>
         </View>
       ))}
@@ -124,7 +122,7 @@ export async function exportBillsPdf(bills: BillDetail[], filename: string) {
   saveAs(blob, `${filename}.pdf`);
 }
 
-/** ใบจัดสินค้า A4 (สำนักงานใหญ่) — เอกสาร PDF: ช่องติ๊กตรวจ รูป ชื่อ/รหัส จำนวนจัดส่ง หมายเหตุ ช่องลงชื่อ */
+/** ใบจัดสินค้า A4 (สำนักงานใหญ่) — เอกสาร PDF: ช่องติ๊กตรวจ รูป ชื่อ/รหัส คงเหลือที่สาขา หมายเหตุ ช่องลงชื่อ */
 function PickingSheetPage({ bill }: { bill: BillDetail }) {
   const items = bill.items.filter((item) => !item.is_removed);
   return (
@@ -151,7 +149,7 @@ function PickingSheetPage({ bill }: { bill: BillDetail }) {
         <Text style={styles.cellPhoto}>รูป</Text>
         <Text style={styles.cellName}>ชื่อสินค้า</Text>
         <Text style={styles.cellCode}>รหัสสินค้า</Text>
-        <Text style={styles.cellNum}>จำนวนส่ง</Text>
+        <Text style={styles.cellNum}>คงเหลือสาขา</Text>
         <Text style={styles.cellNote}>หมายเหตุ</Text>
       </View>
       {items.map((item, index) => {
@@ -173,7 +171,7 @@ function PickingSheetPage({ bill }: { bill: BillDetail }) {
               )}
             </View>
             <Text style={styles.cellCode}>{sub ? sub.product_code : item.product_code}</Text>
-            <Text style={[styles.cellNum, { fontWeight: 'bold', fontSize: 15 }]}>{sub ? sub.ship_qty : item.hq_ship_qty ?? '-'}</Text>
+            <Text style={styles.cellNum}>{item.stock_on_hand ?? '-'}</Text>
             <Text style={styles.cellNote}>
               {[sub ? `เหตุผลทดแทน: ${sub.reason}` : null, item.hq_note, item.staff_note ? `สาขา: ${item.staff_note}` : null].filter(Boolean).join(' / ') || '-'}
             </Text>
