@@ -35,6 +35,15 @@ export interface BillRow {
   version: number;
   billed_at: string | null;
   billed_by: string | null;
+  /** ชื่อผู้รับผิดชอบบิล (กรอกตอนตัดบิล) */
+  responsible_name: string | null;
+  /** ปัญหาหลังรับของ: open = สาขาแจ้งของไม่ครบ รอแก้ไข · resolved = ผู้ดูแลปิดเรื่องแล้ว */
+  issue_status: 'open' | 'resolved' | null;
+  issue_summary: string | null;
+  issue_opened_at: string | null;
+  issue_resolved_note: string | null;
+  issue_resolved_by: string | null;
+  issue_resolved_at: string | null;
   shipped_at: string | null;
   shipped_by: string | null;
   received_at: string | null;
@@ -59,6 +68,11 @@ export interface BillItemRow {
   hq_note: string | null;
   picked_at: string | null;
   picked_by: string | null;
+  /** ผลเช็คของฝั่งสาขาหลังได้รับ: null=ยังไม่เช็ค · ok=ได้รับ · missing=ไม่ได้รับ/ไม่ครบ */
+  received_state: 'ok' | 'missing' | null;
+  received_note: string | null;
+  received_checked_by: string | null;
+  received_checked_at: string | null;
   is_removed: boolean;
   removed_at: string | null;
   removed_by: string | null;
@@ -84,7 +98,7 @@ export interface AuditLogRow {
   id: string;
   bill_id: string;
   bill_item_id: string | null;
-  admin_id: string;
+  admin_id: string | null; // null = การกระทำของสาขา (admin_name = "สาขา · ชื่อ")
   admin_name: string;
   action: AuditAction;
   before_data: JsonObject | null;

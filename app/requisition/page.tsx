@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import BranchPicker from '@/components/requisition/BranchPicker';
+import SystemSwitcher from '@/components/SystemSwitcher';
 import { callApi, errorText } from '@/lib/requisition-api';
 
 const BRANCH_STORAGE_KEY = 'aemori-requisition-branch';
@@ -414,7 +415,11 @@ export default function RequisitionPage() {
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
             style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, #f43f5e 0%, transparent 60%)' }} />
 
-          <div className="relative p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          {/* สลับระบบ — เมนูหลัก (แบบเดียวกับระบบแจ้งสินค้าใกล้หมด) */}
+          <div className="relative px-3 pt-4 sm:px-5">
+            <SystemSwitcher current="requisition" area="staff" branchName={branchName} variant="hero" />
+          </div>
+          <div className="relative p-5 pt-4 sm:p-6 sm:pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-11 h-11 rounded-xl bg-pink-50 flex items-center justify-center overflow-hidden border border-pink-100 shadow-inner">
                 <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
@@ -432,7 +437,7 @@ export default function RequisitionPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
               {totalCartItems > 0 && (
                 <div className="flex items-center gap-2 bg-pink-50 border border-pink-100 rounded-xl px-3.5 py-2">
                   <span className="text-xs font-black text-pink-500">🛒</span>
@@ -441,10 +446,6 @@ export default function RequisitionPage() {
                   <span className="text-xs font-semibold text-pink-400">{cart.length} รายการ</span>
                 </div>
               )}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2 text-center">
-                <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">ประเภท</span>
-                <span className="text-xs font-black text-slate-600">Requisition Form</span>
-              </div>
             </div>
           </div>
         </div>

@@ -47,6 +47,8 @@ export const FIELD_LABEL: Record<string, string> = {
   stock_on_hand: 'คงเหลือหน้าร้าน',
   hq_ship_qty: 'จำนวนจัดส่ง',
   hq_note: 'หมายเหตุ HQ',
+  staff_note: 'หมายเหตุสาขา',
+  photo_path: 'รูปสินค้า',
   is_removed: 'ถูกลบ',
   status: 'สถานะ',
   item_count: 'จำนวนรายการ',

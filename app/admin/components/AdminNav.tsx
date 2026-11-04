@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import SystemSwitcher from '@/components/SystemSwitcher';
 
 const links = [
   { href: '/admin/dashboard', label: 'แดชบอร์ด', icon: '📊' },
@@ -38,8 +39,8 @@ export default function AdminNav() {
           return <Link key={link.href} href={link.href} aria-current={active ? 'page' : undefined} className={`rounded-lg px-1 py-2 ${active ? 'bg-white text-pink-600 shadow-sm' : 'text-slate-600'}`}><span className="block text-base">{link.icon}</span>{link.label}</Link>;
         })}
       </div>
-      <form action="/api/admin/logout" method="post" className="mt-3 flex items-center justify-end gap-2">
-        <Link href="/admin" className="rounded-lg px-3 py-1.5 text-[11px] font-bold text-slate-500 transition-colors hover:bg-pink-50 hover:text-pink-600">⇄ เลือกระบบ</Link>
+      <form action="/api/admin/logout" method="post" className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <SystemSwitcher current="requisition" area="admin" />
         <button type="submit" className="rounded-lg px-3 py-1.5 text-[11px] font-bold text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600">ออกจากโหมดผู้ดูแล</button>
       </form>
     </nav>

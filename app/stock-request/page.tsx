@@ -25,8 +25,18 @@ export default function SelectBranchPage() {
       ]);
       setBranches(list.branches);
       setCurrent(ctx);
-      const wantsChange = new URLSearchParams(window.location.search).has('change');
-      if (ctx.branch && !wantsChange) router.replace('/stock-request/bill');
+      const params = new URLSearchParams(window.location.search);
+      // มาจากปุ่มสลับระบบในหน้าเบิกสินค้า: ใช้สาขาเดียวกันต่อเลย (เทียบด้วยชื่อสาขา)
+      const fromRequisition = params.get('branch');
+      const sameBranch = fromRequisition ? list.branches.find((branch) => branch.name === fromRequisition) : undefined;
+      if (sameBranch) {
+        if (ctx.branch?.id !== sameBranch.id) {
+          await apiFetch('/api/stock-request/branch/context', { method: 'POST', json: { branchId: sameBranch.id } });
+        }
+        router.replace('/stock-request/bill');
+        return;
+      }
+      if (ctx.branch && !params.has('change')) router.replace('/stock-request/bill');
     } catch (err) {
       setError(errorMessage(err));
     }

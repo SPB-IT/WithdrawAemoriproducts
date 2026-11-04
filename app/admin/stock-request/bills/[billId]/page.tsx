@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { AuditList, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
+import { AuditList, IssueBanner, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
 import CameraCapture from '@/components/stock-request/CameraCapture';
 import {
   ConfirmDialog,
@@ -38,6 +38,7 @@ export default function HqBillDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [resolving, setResolving] = useState(false);
   const [exporting, setExporting] = useState<'excel' | 'pdf' | 'sheet' | null>(null);
 
   const load = useCallback(async () => {
@@ -159,6 +160,11 @@ export default function HqBillDetailPage() {
         <div className="mt-5">
           <StatusTimeline bill={bill} />
         </div>
+        {bill.issue_status && (
+          <div className="mt-4">
+            <IssueBanner bill={bill} onResolve={() => setResolving(true)} />
+          </div>
+        )}
         {afterBilling && (
           <p className="mt-4 rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
             บิลนี้ตัดแล้ว — การแก้ไขทุกครั้งต้องระบุเหตุผลและถูกบันทึกในประวัติ บิลจะไม่กลับไปเปิดรับรายการจากสาขาอีก
@@ -218,6 +224,16 @@ export default function HqBillDetailPage() {
       <ItemFormModal dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
       <SubstitutionModal dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
       <ReasonConfirm dialog={dialog} bill={bill} onClose={() => setDialog(null)} mutate={mutate} />
+      <ResolveIssueDialog
+        open={resolving}
+        bill={bill}
+        onClose={() => setResolving(false)}
+        onDone={async () => {
+          setResolving(false);
+          setNotice({ tone: 'ok', text: 'ปิดเรื่องปัญหาบิลนี้แล้ว — สาขาได้รับแจ้งเตือน' });
+          await load();
+        }}
+      />
     </div>
   );
 }
@@ -241,6 +257,13 @@ function ItemRow({ item, index, bill, onAction }: { item: BillItemDetail; index:
             </p>
             {item.staff_note && <p className="mt-1 text-xs text-slate-600">📝 สาขา: {item.staff_note}</p>}
             {item.hq_note && <p className="mt-1 text-xs text-sky-700">💬 HQ: {item.hq_note}</p>}
+            {item.picked_at && <p className="mt-1 text-[11px] font-bold text-slate-500">📦 จัดเตรียมแล้ว{item.picked_by ? ` โดย ${item.picked_by}` : ''} · {formatDateTime(item.picked_at)}</p>}
+            {item.received_state === 'ok' && <p className="mt-1 text-xs font-bold text-emerald-700">✓ สาขาได้รับแล้ว · {item.received_checked_by}</p>}
+            {item.received_state === 'missing' && (
+              <p className="mt-1 rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600">
+                ✗ สาขาแจ้งไม่ได้รับ/ไม่ครบ: {item.received_note} · {item.received_checked_by}
+              </p>
+            )}
             <p className="mt-1 text-[11px] text-slate-400">
               {item.source === 'hq' ? `HQ เพิ่มโดย ${item.reported_by_name}` : `ลงรายการโดย ${item.reported_by_name}`} · {formatDateTime(item.created_at)}
             </p>
@@ -518,6 +541,62 @@ function ReasonConfirm({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
     <ConfirmDialog open title={config.title} message={config.message} confirmLabel={config.label} tone={config.tone} busy={busy} onCancel={onClose} onConfirm={confirm}>
       {dialog.kind !== 'ship' && <ReasonField required={needsReason} value={reason} onChange={setReason} />}
       <InlineError message={error} />
+    </ConfirmDialog>
+  );
+}
+
+// ปิดเรื่องบิลที่มีปัญหา — ต้องระบุวิธีแก้และชื่อผู้ปิดเรื่อง (แจ้งสาขาอัตโนมัติ)
+function ResolveIssueDialog({ open, bill, onClose, onDone }: { open: boolean; bill: BillDetail; onClose: () => void; onDone: () => Promise<void> }) {
+  const [note, setNote] = useState('');
+  const [resolver, setResolver] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const quick = ['จัดส่งของที่ขาดเพิ่มแล้ว', 'ตรวจสอบแล้วส่งครบ', 'ยกเลิกรายการที่ขาด'];
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      setNote('');
+      setError(null);
+      try {
+        const list = JSON.parse(localStorage.getItem('sr_responsible_names') ?? '[]');
+        setResolver(Array.isArray(list) && typeof list[0] === 'string' ? list[0] : '');
+      } catch {
+        setResolver('');
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  const confirm = async () => {
+    if (!note.trim()) return setError('กรุณาระบุวิธีแก้/หมายเหตุ');
+    if (!resolver.trim()) return setError('กรุณาระบุชื่อผู้ปิดเรื่อง');
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/admin/stock-request/api/bills/${bill.id}/resolve-issue`, { method: 'POST', json: { note: note.trim(), resolverName: resolver.trim() } });
+      await onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ConfirmDialog open={open} title="ปิดเรื่องปัญหาบิล" confirmLabel="ปิดเรื่อง" busy={busy} onCancel={onClose} onConfirm={confirm} message={<>บิล <b className="font-mono">{bill.bill_no}</b> · {bill.branch_name}</>}>
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-1.5">
+          {quick.map((text) => (
+            <button key={text} type="button" onClick={() => setNote(text)} className="rounded-full bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 ring-1 ring-pink-100">
+              {text}
+            </button>
+          ))}
+        </div>
+        <textarea value={note} onChange={(event) => setNote(event.target.value)} className={`${inputClass} min-h-20`} maxLength={1000} placeholder="วิธีแก้ / หมายเหตุ (บังคับ) — สาขาจะเห็นข้อความนี้" />
+        <input value={resolver} onChange={(event) => setResolver(event.target.value)} className={inputClass} maxLength={100} placeholder="ชื่อผู้ปิดเรื่อง (บังคับ)" />
+        <InlineError message={error} />
+      </div>
     </ConfirmDialog>
   );
 }

@@ -11,7 +11,7 @@ export function StatusTimeline({ bill }: { bill: BillDetail }) {
   const timeFor = (index: number) =>
     [bill.created_at, bill.billed_at, bill.shipped_at, bill.received_at][index];
   const whoFor = (index: number) =>
-    [null, bill.billed_by_name, bill.shipped_by_name, bill.received_by_name][index];
+    [null, bill.responsible_name ? `ผู้รับผิดชอบ: ${bill.responsible_name}` : bill.billed_by_name, bill.shipped_by_name, bill.received_by_name][index];
 
   return (
     <ol className="grid grid-cols-4 gap-1">
@@ -76,7 +76,7 @@ function formatValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-const SHOWN_KEYS = ['product_name', 'product_code', 'stock_on_hand', 'hq_ship_qty', 'hq_note', 'ship_qty', 'is_removed', 'status', 'item_count'];
+const SHOWN_KEYS = ['product_name', 'product_code', 'stock_on_hand', 'staff_note', 'photo_path', 'hq_ship_qty', 'hq_note', 'ship_qty', 'is_removed', 'status', 'item_count'];
 
 function describeChange(log: AuditLogRow): string[] {
   const before = (log.before_data ?? {}) as JsonObject;
@@ -121,5 +121,55 @@ export function AuditList({ logs, itemNames }: { logs: AuditLogRow[]; itemNames?
         </li>
       ))}
     </ul>
+  );
+}
+
+/** ป้ายเล็กบอกว่าบิลมีปัญหา (สาขาแจ้งของไม่ครบ) หรือแก้ไขแล้ว */
+export function IssueBadge({ bill }: { bill: Pick<BillDetail, 'issue_status'> }) {
+  if (bill.issue_status === 'open') {
+    return <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-black text-rose-700 ring-1 ring-rose-200">⚠️ ของไม่ครบ · รอแก้ไข</span>;
+  }
+  if (bill.issue_status === 'resolved') {
+    return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100">✅ แก้ไขปัญหาแล้ว</span>;
+  }
+  return null;
+}
+
+/** กล่องรายละเอียดปัญหาของบิล: รายการที่สาขาแจ้งว่าไม่ได้รับ/ไม่ครบ + ผลการแก้ไข · onResolve = ปุ่มปิดเรื่อง (หลังบ้าน) */
+export function IssueBanner({ bill, onResolve }: { bill: BillDetail; onResolve?: () => void }) {
+  if (!bill.issue_status) return null;
+  const missing = bill.items.filter((item) => !item.is_removed && item.received_state === 'missing');
+  const open = bill.issue_status === 'open';
+  return (
+    <section className={`rounded-2xl p-4 ring-1 ${open ? 'bg-rose-50 ring-rose-200' : 'bg-emerald-50/60 ring-emerald-100'}`}>
+      <p className={`text-sm font-black ${open ? 'text-rose-700' : 'text-emerald-700'}`}>
+        {open ? '⚠️ สาขาแจ้งว่าได้รับของไม่ครบ — รอสำนักงานใหญ่แก้ไข' : '✅ แก้ไขปัญหาแล้ว'}
+      </p>
+      <p className="mt-0.5 text-[11px] text-slate-500">
+        แจ้งเมื่อ {formatDateTime(bill.issue_opened_at)}
+        {bill.received_by_name ? ` · โดย ${bill.received_by_name}` : ''}
+      </p>
+      {missing.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-xs">
+          {missing.map((item) => (
+            <li key={item.id} className="rounded-lg bg-white/80 px-2.5 py-1.5 ring-1 ring-rose-100">
+              <b>{item.substitution?.product_name ?? item.product_name}</b> ({item.substitution?.product_code ?? item.product_code}) — <span className="text-rose-600">{item.received_note ?? '-'}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        bill.issue_summary && <p className="mt-2 text-xs text-slate-600">{bill.issue_summary}</p>
+      )}
+      {!open && (
+        <p className="mt-2 rounded-lg bg-white/80 px-2.5 py-1.5 text-xs text-emerald-800 ring-1 ring-emerald-100">
+          วิธีแก้: {bill.issue_resolved_note} · โดย {bill.issue_resolved_by} · {formatDateTime(bill.issue_resolved_at)}
+        </p>
+      )}
+      {open && onResolve && (
+        <button type="button" onClick={onResolve} className="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-rose-700">
+          แก้ไขแล้ว / ปิดเรื่อง
+        </button>
+      )}
+    </section>
   );
 }

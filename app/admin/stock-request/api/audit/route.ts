@@ -8,6 +8,12 @@ import { bangkokDayBoundary, parseBranchId } from '@/lib/stock-request/validatio
 
 export const dynamic = 'force-dynamic';
 
+function snapshotLabel(data: Record<string, unknown> | null) {
+  const name = typeof data?.product_name === 'string' ? data.product_name : null;
+  if (!name) return null;
+  return typeof data?.product_code === 'string' ? `${name} (${data.product_code})` : name;
+}
+
 const PAGE_SIZE = 50;
 type Row = AuditLogRow & { bills: { bill_no: string; branch_id: number } | null };
 
@@ -48,7 +54,8 @@ export const GET = handle(async (request: NextRequest) => {
     ...log,
     bill_no: bills?.bill_no ?? '-',
     branch_name: bills ? branchNames.get(bills.branch_id) ?? `สาขา ${bills.branch_id}` : '-',
-    item_label: log.bill_item_id ? itemNames.get(log.bill_item_id) ?? null : null,
+    // รายการที่ถูกลบไปแล้ว (เช่น สาขาลบเอง) ใช้ชื่อจากข้อมูลก่อน/หลังใน log แทน
+    item_label: log.bill_item_id ? itemNames.get(log.bill_item_id) ?? snapshotLabel(log.before_data ?? log.after_data) : null,
   }));
   return NextResponse.json({ logs, total: count ?? logs.length, page, pageSize: PAGE_SIZE });
 });

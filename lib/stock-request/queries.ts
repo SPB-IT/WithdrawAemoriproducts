@@ -1,5 +1,5 @@
 import 'server-only';
-import { SR_BUCKET } from './constants';
+import { SR_BUCKET, SR_HISTORY_LIMIT } from './constants';
 import { ApiError, fromDbError } from './errors';
 import { getServiceClient } from './supabase-admin';
 import type {
@@ -217,7 +217,8 @@ export async function loadBillDetails(bills: BillRow[], options: BillDetailOptio
   return bills.map((bill) => ({
     ...bill,
     branch_name: branchNames.get(bill.branch_id) ?? `สาขา ${bill.branch_id}`,
-    billed_by_name: bill.billed_by ? adminNames.get(bill.billed_by) ?? null : null,
+    // ผู้รับผิดชอบที่กรอกตอนตัดบิลมาก่อน (บิลเก่าใช้ชื่อโปรไฟล์ผู้ดูแล)
+    billed_by_name: bill.responsible_name ?? (bill.billed_by ? adminNames.get(bill.billed_by) ?? null : null),
     shipped_by_name: bill.shipped_by ? adminNames.get(bill.shipped_by) ?? null : null,
     items: itemsByBill.get(bill.id) ?? [],
     status_logs: statusLogs.filter((log) => log.bill_id === bill.id),
@@ -313,4 +314,60 @@ export async function markHqNotificationsRead(adminId: string, ids: string[] | '
     .from('notification_reads')
     .upsert(list.map((id) => ({ notification_id: id, admin_id: adminId })), { onConflict: 'notification_id,admin_id', ignoreDuplicates: true });
   if (error) throw fromDbError(error);
+}
+
+// ---------------------------------------------------------------------------
+// Branch activity log — ให้ผู้ดูแลเห็นว่าพนักงานสาขาคนไหนทำอะไร (audit_logs, admin_id = null)
+// ---------------------------------------------------------------------------
+const ITEM_LOG_KEYS = ['product_name', 'product_code', 'stock_on_hand', 'staff_note', 'photo_path'] as const;
+
+export function pickItemFields(item: Partial<BillItemRow> | null | undefined) {
+  if (!item) return null;
+  return Object.fromEntries(ITEM_LOG_KEYS.filter((key) => key in item).map((key) => [key, item[key] ?? null]));
+}
+
+export async function logBranchAction(entry: {
+  billId: string;
+  itemId?: string | null;
+  staffName: string;
+  action: 'item_add' | 'item_update' | 'item_remove' | 'status_change';
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+}) {
+  // บันทึกไม่สำเร็จไม่ควรทำให้งานหลักล้ม — แค่ log ไว้ฝั่ง server
+  const { error } = await getServiceClient().from('audit_logs').insert({
+    bill_id: entry.billId,
+    bill_item_id: entry.itemId ?? null,
+    admin_id: null,
+    admin_name: `สาขา · ${entry.staffName}`,
+    action: entry.action,
+    before_data: entry.before ?? null,
+    after_data: entry.after ?? null,
+    after_billing: false,
+  });
+  if (error) console.error('[stock-request] branch audit log failed', { code: error.code, message: error.message });
+}
+
+// ---------------------------------------------------------------------------
+// ประวัติของสาขา: 3 บิลล่าสุดที่ตัดแล้ว + บิลที่ปัญหายังไม่ปิด (ไม่ถูกลบจนกว่าจะปิดเรื่อง)
+// ---------------------------------------------------------------------------
+export async function loadBranchHistory(branchId: number, audit: BillDetailOptions['audit'] = 'after_billing') {
+  const db = getServiceClient();
+  const [recent, openIssues] = await Promise.all([
+    db
+      .from('bills')
+      .select('*')
+      .eq('branch_id', branchId)
+      .neq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .order('bill_no', { ascending: false })
+      .limit(SR_HISTORY_LIMIT),
+    db.from('bills').select('*').eq('branch_id', branchId).eq('issue_status', 'open').order('created_at', { ascending: false }),
+  ]);
+  if (recent.error) throw fromDbError(recent.error);
+  if (openIssues.error) throw fromDbError(openIssues.error);
+  const recentRows = (recent.data ?? []) as BillRow[];
+  const seen = new Set(recentRows.map((bill) => bill.id));
+  const extra = ((openIssues.data ?? []) as BillRow[]).filter((bill) => !seen.has(bill.id));
+  return loadBillDetails([...recentRows, ...extra], { audit });
 }

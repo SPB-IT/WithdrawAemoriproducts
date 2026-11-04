@@ -2,12 +2,31 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
-import { ConfirmDialog, ErrorState, InlineError, LoadingState, PhotoThumb, Spinner, StatusBadge, primaryButton } from '@/components/stock-request/ui';
-import { apiFetch, errorMessage, formatDateTime, formatNumber } from '@/lib/stock-request/client';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import CameraCapture from '@/components/stock-request/CameraCapture';
+import { ConfirmDialog, ErrorState, Field, InlineError, LoadingState, Modal, PhotoThumb, Spinner, StatusBadge, inputClass, primaryButton, secondaryButton } from '@/components/stock-request/ui';
+import { apiFetch, errorMessage, formatDateTime, formatNumber, uploadPhoto } from '@/lib/stock-request/client';
 import type { BillDetail, BillItemDetail } from '@/lib/stock-request/types';
 
 const REFRESH_MS = 10_000;
+const PICKER_KEY = 'sr_picker_names'; // ชื่อผู้เช็คของที่เคยใช้ในเครื่องนี้
+
+function readPickers(): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(PICKER_KEY) ?? '[]');
+    return Array.isArray(list) ? list.filter((name) => typeof name === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePicker(name: string) {
+  try {
+    localStorage.setItem(PICKER_KEY, JSON.stringify([name, ...readPickers().filter((item) => item !== name)].slice(0, 8)));
+  } catch {
+    // ไม่กระทบการเช็คของ
+  }
+}
 
 // หน้าเช็คของ (มือถือ): ถือโทรศัพท์ไปจัดของในคลัง แตะการ์ดเพื่อติ๊กว่าเตรียมแล้ว — บันทึกในระบบ หลายคนช่วยกันได้
 export default function PickingChecklistPage() {
@@ -19,6 +38,36 @@ export default function PickingChecklistPage() {
   const [confirmShip, setConfirmShip] = useState(false);
   const [shipping, setShipping] = useState(false);
   const [hidePicked, setHidePicked] = useState(false);
+  const [rejecting, setRejecting] = useState<BillItemDetail | null>(null);
+  const [substituting, setSubstituting] = useState<BillItemDetail | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // ลงชื่อผู้เช็คของ — ต้องมีก่อนติ๊ก/ปฏิเสธ/ทดแทน
+  const [picker, setPicker] = useState('');
+  const [pickers, setPickers] = useState<string[]>([]);
+  const [pickerMissing, setPickerMissing] = useState(false);
+  const pickerRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const list = readPickers();
+      setPickers(list);
+      setPicker(list[0] ?? '');
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  /** ยังไม่ลงชื่อ → เลื่อนไปที่ช่องชื่อ + กรอบแดง และไม่ทำต่อ */
+  const requirePicker = () => {
+    const name = picker.trim();
+    if (name) {
+      savePicker(name);
+      return name;
+    }
+    setPickerMissing(true);
+    pickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    pickerRef.current?.focus({ preventScroll: true });
+    return null;
+  };
 
   const load = useCallback(async () => {
     try {
@@ -40,14 +89,16 @@ export default function PickingChecklistPage() {
 
   const toggle = async (item: BillItemDetail) => {
     const picked = !item.picked_at;
+    const pickerName = picked ? requirePicker() : picker.trim();
+    if (picked && !pickerName) return;
     setBusyId(item.id);
     setActionError(null);
     // แสดงผลทันที แล้วค่อยยืนยันกับ server
     setBill((current) =>
-      current && { ...current, items: current.items.map((row) => (row.id === item.id ? { ...row, picked_at: picked ? new Date().toISOString() : null } : row)) },
+      current && { ...current, items: current.items.map((row) => (row.id === item.id ? { ...row, picked_at: picked ? new Date().toISOString() : null, picked_by: picked ? pickerName : null } : row)) },
     );
     try {
-      await apiFetch(`/admin/stock-request/api/items/${item.id}/pick`, { method: 'POST', json: { picked } });
+      await apiFetch(`/admin/stock-request/api/items/${item.id}/pick`, { method: 'POST', json: { picked, pickerName } });
     } catch (err) {
       setActionError(errorMessage(err));
       void load();
@@ -73,6 +124,22 @@ export default function PickingChecklistPage() {
     }
   };
 
+  // ไม่มีของ / นำกลับ — บิลตัดแล้วจึงต้องมีเหตุผลทุกครั้ง (เก็บใน Audit Log และแจ้งสาขา)
+  const setRemoved = async (item: BillItemDetail, removed: boolean, reason: string) => {
+    if (!bill) return;
+    await apiFetch(`/admin/stock-request/api/items/${item.id}/remove`, { method: 'POST', json: { expectedVersion: bill.version, removed, reason: withPicker(reason) } });
+    setNotice(removed ? `ปฏิเสธ “${item.product_name}” แล้ว` : `นำ “${item.product_name}” กลับเข้าบิลแล้ว`);
+    await load();
+  };
+
+  const withPicker = (reason: string) => (picker.trim() ? `${reason} · ผู้เช็คของ: ${picker.trim()}` : reason);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 2500);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   if (error && !bill) return <ErrorState message={error} onRetry={load} />;
   if (!bill) return <LoadingState label="กำลังโหลดรายการ..." />;
 
@@ -81,6 +148,9 @@ export default function PickingChecklistPage() {
   const allPicked = items.length > 0 && pickedCount === items.length;
   const shown = hidePicked ? items.filter((item) => !item.picked_at) : items;
   const pickable = bill.status === 'billed';
+  const removedItems = bill.items.filter((item) => item.is_removed);
+  const removeReason = (item: BillItemDetail) =>
+    bill.audit_logs.find((log) => log.bill_item_id === item.id && log.action === 'item_remove')?.reason ?? null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 pb-28">
@@ -104,6 +174,45 @@ export default function PickingChecklistPage() {
             {pickedCount}/{items.length}
           </span>
         </div>
+        {pickable && (
+          <div className="mt-3">
+            <label className="block text-xs font-black text-slate-600">
+              ผู้เช็คของ <span className="text-rose-500">*</span>
+              <input
+                ref={pickerRef}
+                value={picker}
+                onChange={(event) => {
+                  setPicker(event.target.value);
+                  if (event.target.value.trim()) setPickerMissing(false);
+                }}
+                className={`${inputClass} mt-1 ${pickerMissing ? 'border-rose-400 ring-4 ring-rose-100' : ''}`}
+                placeholder="ชื่อคนที่ไปเช็คของ"
+                maxLength={100}
+              />
+            </label>
+            {pickerMissing && <p className="mt-1 text-xs font-bold text-rose-600">⚠️ ลงชื่อผู้เช็คของก่อน แล้วค่อยติ๊กรายการ</p>}
+            {pickers.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {pickers.map((name) => {
+                  const active = name === picker.trim();
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => {
+                        setPicker(name);
+                        setPickerMissing(false);
+                      }}
+                      className={`rounded-full px-3 py-1 text-xs font-bold ring-1 transition ${active ? 'bg-pink-500 text-white ring-pink-500' : 'bg-pink-50 text-pink-700 ring-pink-100'}`}
+                    >
+                      {active ? '✓' : '👤'} {name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <label className="mt-3 flex items-center gap-2 text-xs font-bold text-slate-500">
           <input type="checkbox" checked={hidePicked} onChange={(event) => setHidePicked(event.target.checked)} className="h-4 w-4 accent-pink-500" />
           ซ่อนรายการที่เตรียมแล้ว
@@ -166,14 +275,81 @@ export default function PickingChecklistPage() {
                   {(item.hq_note || item.staff_note) && (
                     <span className="mt-1 block text-[11px] text-slate-500">{[item.hq_note && `HQ: ${item.hq_note}`, item.staff_note && `สาขา: ${item.staff_note}`].filter(Boolean).join(' · ')}</span>
                   )}
-                  {picked && <span className="mt-1 block text-[11px] font-bold text-emerald-700">เตรียมแล้ว · {formatDateTime(item.picked_at)}</span>}
+                  {picked && (
+                    <span className="mt-1 block text-[11px] font-bold text-emerald-700">
+                      เตรียมแล้ว{item.picked_by ? ` โดย ${item.picked_by}` : ''} · {formatDateTime(item.picked_at)}
+                    </span>
+                  )}
                 </span>
               </div>
+              {pickable && (
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-xs font-bold">
+                  <button type="button" onClick={() => requirePicker() && setRejecting(item)} className="rounded-xl bg-rose-50 py-2 text-rose-600 ring-1 ring-rose-100 hover:bg-rose-100">
+                    ✖ ไม่มีของ / ปฏิเสธ
+                  </button>
+                  <button type="button" onClick={() => requirePicker() && setSubstituting(item)} className="rounded-xl bg-amber-50 py-2 text-amber-700 ring-1 ring-amber-100 hover:bg-amber-100">
+                    🔁 {sub ? 'เปลี่ยนสินค้าทดแทน' : 'ใช้สินค้าทดแทน'}
+                  </button>
+                </div>
+              )}
             </li>
           );
         })}
       </ul>
       {hidePicked && shown.length === 0 && <p className="py-6 text-center text-sm font-bold text-emerald-600">✅ เตรียมครบทุกรายการแล้ว</p>}
+
+      {removedItems.length > 0 && (
+        <section className="rounded-2xl border border-rose-100 bg-rose-50/40 p-3">
+          <p className="mb-2 text-sm font-black text-rose-700">ไม่ได้จัดส่ง ({removedItems.length})</p>
+          <ul className="space-y-2">
+            {removedItems.map((item) => (
+              <li key={item.id} className="flex items-center gap-3 rounded-xl bg-white p-2.5 ring-1 ring-rose-100">
+                <div className="min-w-0 flex-1 text-xs">
+                  <p className="font-bold text-slate-500 line-through">{item.product_name}</p>
+                  <p className="text-slate-400">รหัส {item.product_code}</p>
+                  {removeReason(item) && <p className="mt-0.5 font-semibold text-rose-600">เหตุผล: {removeReason(item)}</p>}
+                </div>
+                {pickable && (
+                  <button
+                    type="button"
+                    onClick={() => setRemoved(item, false, 'นำกลับจากหน้าเช็คของ').catch((err) => setActionError(errorMessage(err)))}
+                    className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200"
+                  >
+                    ↩ นำกลับ
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {notice && (
+        <div role="status" className="pointer-events-none fixed inset-x-3 top-3 z-[70] mx-auto max-w-md rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-xl">
+          ✅ {notice}
+        </div>
+      )}
+
+      <RejectDialog
+        item={rejecting}
+        onClose={() => setRejecting(null)}
+        onConfirm={async (reason) => {
+          if (!rejecting) return;
+          await setRemoved(rejecting, true, reason);
+          setRejecting(null);
+        }}
+      />
+      <SubstituteDialog
+        item={substituting}
+        bill={bill}
+        picker={picker.trim()}
+        onClose={() => setSubstituting(null)}
+        onSaved={async (name) => {
+          setSubstituting(null);
+          setNotice(`ใช้ “${name}” แทนแล้ว`);
+          await load();
+        }}
+      />
 
       {pickable && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-pink-100 bg-white/95 p-3 backdrop-blur">
@@ -195,5 +371,152 @@ export default function PickingChecklistPage() {
         message={`เปลี่ยนสถานะบิล ${bill.bill_no} เป็น “จัดส่งแล้ว” — สาขาจะได้รับแจ้งเตือนให้ยืนยันเมื่อได้รับสินค้า`}
       />
     </div>
+  );
+}
+
+// ปฏิเสธรายการ (ไม่มีของ) — ต้องมีหมายเหตุทุกครั้ง
+function RejectDialog({ item, onClose, onConfirm }: { item: BillItemDetail | null; onClose: () => void; onConfirm: (reason: string) => Promise<void> }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const quick = ['สินค้าหมดสต็อก', 'รอสินค้าเข้า', 'สินค้าเลิกขาย'];
+
+  useEffect(() => {
+    if (!item) return;
+    const timer = setTimeout(() => {
+      setReason('');
+      setError(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [item]);
+
+  const confirm = async () => {
+    if (!reason.trim()) return setError('กรุณาระบุหมายเหตุ/เหตุผลที่ปฏิเสธ');
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm(reason.trim());
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ConfirmDialog
+      open={Boolean(item)}
+      title="ปฏิเสธรายการนี้"
+      tone="danger"
+      confirmLabel="ยืนยันปฏิเสธ"
+      busy={busy}
+      onCancel={onClose}
+      onConfirm={confirm}
+      message={
+        <>
+          <b>{item?.product_name}</b> ({item?.product_code}) จะไม่ถูกจัดส่ง — สาขาจะเห็นเหตุผลในประวัติ
+        </>
+      }
+    >
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-1.5">
+          {quick.map((text) => (
+            <button key={text} type="button" onClick={() => setReason(text)} className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-600 ring-1 ring-rose-100">
+              {text}
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          className={`${inputClass} min-h-20 ${error ? 'border-rose-400 ring-4 ring-rose-100' : ''}`}
+          maxLength={1000}
+          placeholder="หมายเหตุ (บังคับ) เช่น สินค้าหมดสต็อก"
+          autoFocus
+        />
+        <InlineError message={error} />
+      </div>
+    </ConfirmDialog>
+  );
+}
+
+// ใช้สินค้าทดแทน (จากหน้าเช็คของ) — สินค้าเดิมยังเก็บไว้ในประวัติ
+function SubstituteDialog({ item, bill, picker, onClose, onSaved }: { item: BillItemDetail | null; bill: BillDetail; picker: string; onClose: () => void; onSaved: (name: string) => Promise<void> }) {
+  const [form, setForm] = useState({ name: '', code: '', reason: '' });
+  const [photo, setPhoto] = useState<Blob | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!item) return;
+    const timer = setTimeout(() => {
+      setForm({ name: '', code: '', reason: '' });
+      setPhoto(null);
+      setError(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [item]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!item) return;
+    if (!form.name.trim() || !form.code.trim()) return setError('กรุณากรอกชื่อและรหัสสินค้าทดแทน');
+    if (!form.reason.trim()) return setError('กรุณาระบุเหตุผลในการเปลี่ยนสินค้า');
+    setBusy(true);
+    setError(null);
+    try {
+      const photoPath = photo ? await uploadPhoto('/admin/stock-request/api/upload-url', photo, { billId: bill.id }) : null;
+      await apiFetch(`/admin/stock-request/api/items/${item.id}/substitution`, {
+        method: 'POST',
+        json: { expectedVersion: bill.version, productName: form.name.trim(), productCode: form.code.trim(), reason: picker ? `${form.reason.trim()} · ผู้เช็คของ: ${picker}` : form.reason.trim(), photoPath },
+      });
+      await onSaved(form.name.trim());
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={Boolean(item)}
+      onClose={busy ? () => undefined : onClose}
+      title="ใช้สินค้าทดแทน"
+      footer={
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={onClose} disabled={busy} className={secondaryButton}>
+            ยกเลิก
+          </button>
+          <button type="submit" form="pick-sub-form" disabled={busy} className={primaryButton}>
+            {busy && <Spinner className="h-4 w-4" />}
+            บันทึกสินค้าทดแทน
+          </button>
+        </div>
+      }
+    >
+      {item && (
+        <form id="pick-sub-form" onSubmit={submit} className="space-y-3">
+          <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            แทน <b>{item.product_name}</b> ({item.product_code}) — สินค้าเดิมยังเก็บไว้ในประวัติ
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="ชื่อสินค้าทดแทน" required>
+              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} maxLength={200} />
+            </Field>
+            <Field label="รหัสสินค้าทดแทน" required>
+              <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={inputClass} maxLength={100} />
+            </Field>
+          </div>
+          <Field label="เหตุผล" required>
+            <textarea value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-16`} maxLength={1000} placeholder="เช่น สินค้าเดิมหมด ใช้รุ่นใกล้เคียงแทน" />
+          </Field>
+          <Field label="รูปสินค้าทดแทน (ไม่บังคับ)">
+            <CameraCapture value={photo} onChange={setPhoto} />
+          </Field>
+          <InlineError message={error} />
+        </form>
+      )}
+    </Modal>
   );
 }

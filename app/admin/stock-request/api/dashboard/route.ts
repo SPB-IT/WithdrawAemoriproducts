@@ -70,8 +70,11 @@ export const GET = handle(async () => {
   // ลบไฟล์รูปของบิลที่พ้นประวัติ 3 บิล (ถ้ามีค้างอยู่)
   processStorageCleanup(50).catch((error) => console.error('[stock-request] cleanup', error));
 
+  const { count: openIssues } = await db.from('bills').select('id', { count: 'exact', head: true }).eq('issue_status', 'open');
+
   return NextResponse.json({
     branchCount: branches.length,
+    openIssues: openIssues ?? 0,
     statusCounts,
     pendingWithItems: pending,
     latest,

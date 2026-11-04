@@ -34,6 +34,7 @@ const styles = StyleSheet.create({
   cellName: { flex: 1, paddingRight: 4 },
   cellNum: { width: 52, textAlign: 'center' },
   cellNote: { width: 120, paddingRight: 2 },
+  cellReceive: { width: 110, paddingLeft: 4 },
   sub: { color: '#be185d', fontSize: 12 },
   box: { width: 12, height: 12, border: '1.2px solid #1e293b', marginHorizontal: 'auto' },
   cellCheck: { width: 24 },
@@ -48,8 +49,16 @@ const fmt = (value: string | null) =>
     ? new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
     : '-';
 
+/** ผลเช็คของฝั่งสาขา (แสดงเมื่อจัดส่งแล้ว) */
+const receivedText = (item: BillDetail['items'][number]) =>
+  item.received_state === 'ok' ? 'ได้รับ' : item.received_state === 'missing' ? `ไม่ได้รับ/ไม่ครบ: ${item.received_note ?? '-'}` : 'ยังไม่เช็ค';
+
 function BillPages({ bill }: { bill: BillDetail }) {
   const items = bill.items.filter((item) => !item.is_removed);
+  const removed = bill.items.filter((item) => item.is_removed);
+  // หลัง HQ จัดส่ง แสดงคอลัมน์ผลเช็คของของสาขา (ใช้เป็นหลักฐานกรณีได้ของไม่ครบ)
+  const showReceive = bill.status === 'shipped' || bill.status === 'received';
+  const missingCount = items.filter((item) => item.received_state === 'missing').length;
   return (
     <Page size="A4" style={styles.page}>
       <View style={styles.header}>
@@ -66,9 +75,20 @@ function BillPages({ bill }: { bill: BillDetail }) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
         <Text style={styles.muted}>สร้างบิล: {fmt(bill.created_at)}</Text>
         <Text style={styles.muted}>
-          ตัดบิล: {fmt(bill.billed_at)} {bill.billed_by_name ? `โดย ${bill.billed_by_name}` : ''}
+          ตัดบิล: {fmt(bill.billed_at)} {bill.responsible_name ? `· ผู้รับผิดชอบ ${bill.responsible_name}` : bill.billed_by_name ? `โดย ${bill.billed_by_name}` : ''}
         </Text>
       </View>
+      {showReceive && (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+          <Text style={styles.muted}>จัดส่ง: {fmt(bill.shipped_at)}</Text>
+          <Text style={styles.muted}>
+            สาขารับ: {fmt(bill.received_at)} {bill.received_by_name ? `โดย ${bill.received_by_name}` : ''}
+          </Text>
+        </View>
+      )}
+      {showReceive && missingCount > 0 && (
+        <Text style={{ marginBottom: 8, color: '#be123c', fontWeight: 'bold' }}>*** สาขาแจ้งว่าได้รับไม่ครบ {missingCount} รายการ</Text>
+      )}
 
       <View style={styles.th} fixed>
         <Text style={styles.cellNo}>#</Text>
@@ -76,6 +96,7 @@ function BillPages({ bill }: { bill: BillDetail }) {
         <Text style={styles.cellName}>สินค้า / รหัส</Text>
         <Text style={styles.cellNum}>คงเหลือ</Text>
         <Text style={styles.cellNote}>หมายเหตุ</Text>
+        {showReceive && <Text style={styles.cellReceive}>ผลรับของ (สาขา)</Text>}
       </View>
       {items.map((item, index) => (
         <View key={item.id} style={styles.row} wrap={false}>
@@ -92,9 +113,21 @@ function BillPages({ bill }: { bill: BillDetail }) {
           </View>
           <Text style={styles.cellNum}>{item.stock_on_hand ?? '-'}</Text>
           <Text style={styles.cellNote}>{[item.staff_note, item.hq_note ? `HQ: ${item.hq_note}` : null].filter(Boolean).join(' / ') || '-'}</Text>
+          {showReceive && (
+            <Text style={[styles.cellReceive, item.received_state === 'missing' ? { color: '#be123c', fontWeight: 'bold' } : item.received_state === 'ok' ? { color: '#047857' } : { color: '#94a3b8' }]}>
+              {receivedText(item)}
+              {item.received_checked_by ? `
+(${item.received_checked_by})` : ''}
+            </Text>
+          )}
         </View>
       ))}
       <Text style={{ marginTop: 6, textAlign: 'right' }}>รวม {items.length} รายการ</Text>
+      {removed.length > 0 && (
+        <Text style={[styles.muted, { marginTop: 4 }]}>
+          รายการที่สำนักงานใหญ่ไม่ได้จัดส่ง: {removed.map((item) => `${item.product_name} (${item.product_code})`).join(', ')}
+        </Text>
+      )}
 
       <View style={styles.signRow} wrap={false}>
         <View style={styles.signBox}>
@@ -140,6 +173,7 @@ function PickingSheetPage({ bill }: { bill: BillDetail }) {
           <Text>{bill.branch_name}</Text>
           <Text style={styles.muted}>สร้างบิล {fmt(bill.created_at)}</Text>
           <Text style={styles.muted}>ตัดบิล {fmt(bill.billed_at)}</Text>
+          {bill.responsible_name && <Text style={{ fontWeight: 'bold' }}>ผู้รับผิดชอบ: {bill.responsible_name}</Text>}
         </View>
       </View>
 
@@ -204,3 +238,13 @@ export async function openPickingSheetPdf(bill: BillDetail, target: Window | nul
   openPdfBlob(blob, `ใบจัดสินค้า-${bill.bill_no}.pdf`, target);
 }
 
+
+/** บิลเป็น PDF เปิดในแท็บใหม่ (ฝั่งสาขาใช้เป็นหลักฐาน) — ถ้าเปิดแท็บไม่ได้จะดาวน์โหลดแทน */
+export async function openBillPdf(bill: BillDetail, target: Window | null) {
+  const blob = await pdf(
+    <Document title={`บิล ${bill.bill_no}`}>
+      <BillPages bill={bill} />
+    </Document>,
+  ).toBlob();
+  openPdfBlob(blob, `บิล-${bill.bill_no}.pdf`, target);
+}

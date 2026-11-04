@@ -1,10 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AuditList, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
-import BranchShell, { useBranch } from '@/components/stock-request/BranchShell';
-import StaffNameField, { readRecentStaff, saveRecentStaff, useBranchStaffNames } from '@/components/stock-request/StaffNameField';
-import { ConfirmDialog, EmptyState, ErrorState, InlineError, LoadingState, PhotoThumb, StatusBadge, primaryButton } from '@/components/stock-request/ui';
+import { AuditList, IssueBadge, IssueBanner, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
+import BranchShell from '@/components/stock-request/BranchShell';
+import { EmptyState, ErrorState, LoadingState, PhotoThumb, StatusBadge, primaryButton, secondaryButton } from '@/components/stock-request/ui';
 import { apiFetch, errorMessage, formatDateTime, formatNumber } from '@/lib/stock-request/client';
 import type { BillDetail } from '@/lib/stock-request/types';
 
@@ -16,17 +16,10 @@ export default function HistoryPage() {
   );
 }
 
-// ประวัติ 3 บิลล่าสุด — ดูอย่างเดียว (ไม่มีปุ่มพิมพ์) + ยืนยันรับสินค้าเมื่อจัดส่งแล้ว
+// ประวัติ 3 บิลล่าสุด — ดูอย่างเดียว · บิลที่จัดส่งแล้วไปหน้าเช็คของเพื่อยืนยันรับ · ทุกบิลส่งออก PDF ได้
 function History() {
-  const { branch } = useBranch();
-  const [staffName, setStaffName] = useState('');
-  const [recentStaff, setRecentStaff] = useState<string[]>([]);
-  const [confirming, setConfirming] = useState<BillDetail | null>(null);
-  const knownStaff = useBranchStaffNames(Boolean(confirming));
   const [bills, setBills] = useState<BillDetail[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -43,31 +36,6 @@ function History() {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const receive = async () => {
-    if (!confirming) return;
-    if (!staffName.trim()) return setActionError('กรุณากรอกชื่อผู้รับสินค้า');
-    setBusy(true);
-    setActionError(null);
-    try {
-      await apiFetch(`/api/stock-request/branch/bills/${confirming.id}/receive`, { method: 'POST', json: { staffName: staffName.trim() } });
-      saveRecentStaff(branch.id, staffName.trim());
-      setConfirming(null);
-      await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openReceive = (bill: BillDetail) => {
-    const recent = readRecentStaff(branch.id);
-    setRecentStaff(recent);
-    setStaffName(recent[0] ?? '');
-    setActionError(null);
-    setConfirming(bill);
-  };
-
   if (error && !bills) return <ErrorState message={error} onRetry={load} />;
   if (!bills) return <LoadingState label="กำลังโหลดประวัติ..." />;
 
@@ -77,34 +45,13 @@ function History() {
       {bills.length === 0 ? (
         <EmptyState icon="🗂️" title="ยังไม่มีประวัติบิล" description="เมื่อสำนักงานใหญ่ตัดบิลแล้ว บิลจะมาแสดงที่นี่เพื่อติดตามสถานะ" />
       ) : (
-        bills.map((bill) => <HistoryBill key={bill.id} bill={bill} onReceive={() => openReceive(bill)} />)
+        bills.map((bill) => <HistoryBill key={bill.id} bill={bill} />)
       )}
-
-      <ConfirmDialog
-        open={Boolean(confirming)}
-        title="ยืนยันรับสินค้า"
-        confirmLabel="ได้รับสินค้าครบแล้ว"
-        busy={busy}
-        onCancel={() => setConfirming(null)}
-        onConfirm={receive}
-        message={
-          <>
-            ยืนยันว่าสาขาได้รับสินค้าตามบิล <span className="font-mono font-bold">{confirming?.bill_no}</span> แล้ว
-            <br />
-            ระบบจะบันทึกชื่อผู้รับและเวลาปัจจุบัน
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <StaffNameField label="ชื่อผู้รับสินค้า" value={staffName} onChange={setStaffName} recent={recentStaff} known={knownStaff} />
-          <InlineError message={actionError} />
-        </div>
-      </ConfirmDialog>
     </div>
   );
 }
 
-function HistoryBill({ bill, onReceive }: { bill: BillDetail; onReceive: () => void }) {
+function HistoryBill({ bill }: { bill: BillDetail }) {
   const [open, setOpen] = useState(bill.status === 'shipped');
   const items = bill.items.filter((item) => !item.is_removed);
   const removed = bill.items.filter((item) => item.is_removed);
@@ -121,16 +68,26 @@ function HistoryBill({ bill, onReceive }: { bill: BillDetail; onReceive: () => v
         </div>
         <div className="flex flex-col items-end gap-1">
           <StatusBadge status={bill.status} />
+          <IssueBadge bill={bill} />
           <span className="text-xs text-slate-400">{open ? 'ซ่อน ▲' : 'ดูรายละเอียด ▼'}</span>
         </div>
       </button>
 
       <div className="border-t border-slate-50 px-4 py-4">
         <StatusTimeline bill={bill} />
-        {bill.status === 'shipped' && (
-          <button type="button" onClick={onReceive} className={`${primaryButton} mt-4 w-full bg-none bg-emerald-500 shadow-emerald-200 hover:bg-emerald-600`}>
-            📦 ยืนยันได้รับสินค้าแล้ว
-          </button>
+        {bill.issue_status && (
+          <div className="mt-3">
+            <IssueBanner bill={bill} />
+          </div>
+        )}
+        {bill.status === 'shipped' ? (
+          <Link href={`/stock-request/receive/${bill.id}`} className={`${primaryButton} mt-4 w-full bg-none bg-emerald-500 shadow-emerald-200 hover:bg-emerald-600`}>
+            📦 เช็คของ / ยืนยันรับสินค้า
+          </Link>
+        ) : (
+          <Link href={`/stock-request/receive/${bill.id}`} className={`${secondaryButton} mt-4 w-full`}>
+            📄 รายการและผลเช็คของ / ส่งออก PDF
+          </Link>
         )}
       </div>
 

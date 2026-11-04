@@ -24,6 +24,8 @@ import type { BillDetail, BillItemDetail } from '@/lib/stock-request/types';
 
 const REFRESH_MS = 30_000;
 
+type FormField = 'photo' | 'name' | 'code' | 'stock' | 'staff';
+
 export default function CurrentBillPage() {
   return (
     <BranchShell>
@@ -41,6 +43,8 @@ function CurrentBill() {
   const [deleting, setDeleting] = useState<BillItemDetail | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteStaff, setDeleteStaff] = useState('');
+  const [deleteRecent, setDeleteRecent] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -63,16 +67,17 @@ function CurrentBill() {
 
   useEffect(() => {
     if (!flash) return;
-    const timer = setTimeout(() => setFlash(null), 3500);
+    const timer = setTimeout(() => setFlash(null), 2500);
     return () => clearTimeout(timer);
   }, [flash]);
 
   const removeItem = async () => {
     if (!deleting) return;
+    if (!deleteStaff.trim()) return setDeleteError('กรุณาระบุชื่อผู้ลบรายการ');
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      await apiFetch(`/api/stock-request/branch/items/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`/api/stock-request/branch/items/${deleting.id}`, { method: 'DELETE', json: { staffName: deleteStaff.trim() } });
       setFlash(`ลบ “${deleting.product_name}” แล้ว`);
       setDeleting(null);
       void load();
@@ -105,7 +110,12 @@ function CurrentBill() {
         </button>
       </section>
 
-      {flash && <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 ring-1 ring-emerald-200">✅ {flash}</div>}
+      {flash && (
+        <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-3 top-3 z-[70] mx-auto flex max-w-md items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-xl shadow-emerald-200">
+          <span className="text-lg">✅</span>
+          <span className="min-w-0 flex-1">{flash}</span>
+        </div>
+      )}
       {error && <InlineError message={`อัปเดตข้อมูลล่าสุดไม่สำเร็จ: ${error}`} />}
 
       <section>
@@ -137,6 +147,9 @@ function CurrentBill() {
                             type="button"
                             onClick={() => {
                               setDeleteError(null);
+                              const recent = bill ? readRecentStaff(bill.branch_id) : [];
+                              setDeleteRecent(recent);
+                              setDeleteStaff(recent[0] ?? '');
                               setDeleting(item);
                             }}
                             className="rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 ring-1 ring-rose-100 hover:bg-rose-100"
@@ -185,7 +198,10 @@ function CurrentBill() {
           </>
         }
       >
-        <InlineError message={deleteError} />
+        <div className="space-y-2">
+          <StaffNameField label="ชื่อผู้ลบรายการ" value={deleteStaff} onChange={setDeleteStaff} recent={deleteRecent} />
+          <InlineError message={deleteError} />
+        </div>
       </ConfirmDialog>
 
       <AddItemModal
@@ -218,9 +234,31 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
   const [savedCount, setSavedCount] = useState(0);
   const [entryKey, setEntryKey] = useState(0); // เปลี่ยนเพื่อรีเซ็ตกล้องเมื่อเริ่มรายการใหม่
   const keepOpenRef = useRef(false);
+  // ช่องที่กรอกผิด/ลืมกรอก → เลื่อนไปหา + กรอบแดง + ข้อความใต้ช่อง
+  const [invalid, setInvalid] = useState<{ field: FormField; message: string } | null>(null);
+  const fieldRefs = useRef<Partial<Record<FormField, HTMLElement | null>>>({});
+  const formRef = useRef<HTMLFormElement>(null);
   // ใช้ id เดิมเมื่อกดบันทึกซ้ำหลังเน็ตหลุด เพื่อไม่ให้เกิดรายการซ้ำ
   const itemIdRef = useRef<string>('');
   const uploadedRef = useRef<{ blob: Blob; path: string } | null>(null);
+
+  const flagInvalid = (field: FormField, message: string) => {
+    setInvalid({ field, message });
+    setError(null);
+    requestAnimationFrame(() => {
+      const el = fieldRefs.current[field];
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const input = el?.matches('input, textarea') ? el : el?.querySelector('input, textarea');
+      if (input instanceof HTMLElement) input.focus({ preventScroll: true });
+    });
+  };
+  const fieldClass = (field: FormField) => (invalid?.field === field ? `${inputClass} border-rose-400 ring-4 ring-rose-100` : inputClass);
+  const fieldError = (field: FormField) => (invalid?.field === field ? <p className="mt-1 text-xs font-bold text-rose-600">⚠️ {invalid.message}</p> : null);
+  // แก้ช่องที่ผิดแล้ว กรอบแดงหายเอง
+  const edit = (field: FormField, setter: (value: string) => void) => (value: string) => {
+    setter(value);
+    if (invalid?.field === field) setInvalid(null);
+  };
 
   const clearItemFields = () => {
     itemIdRef.current = crypto.randomUUID();
@@ -231,6 +269,7 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
     setStock('');
     setNote('');
     setError(null);
+    setInvalid(null);
     setEntryKey((key) => key + 1);
   };
 
@@ -251,11 +290,14 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const stockValue = Number(stock);
-    if (!photo) return setError('กรุณาถ่ายรูปหรือเลือกรูปสินค้า');
-    if (!productName.trim()) return setError('กรุณากรอกชื่อสินค้า');
-    if (!productCode.trim()) return setError('กรุณากรอกรหัสสินค้า');
-    if (stock.trim() === '' || !Number.isInteger(stockValue) || stockValue < 0) return setError('จำนวนคงเหลือต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
-    if (!staffName.trim()) return setError('กรุณากรอกชื่อผู้ลงรายการ');
+    // "บันทึกแล้วปิด" ตอนฟอร์มยังว่าง (เช่น หลังบันทึกต่อเนื่องไปแล้ว) = ปิดหน้าต่างเลย
+    const pristine = !photo && !productName.trim() && !productCode.trim() && stock.trim() === '' && !note.trim();
+    if (!keepOpenRef.current && pristine) return onClose();
+    if (!photo) return flagInvalid('photo', 'กรุณาถ่ายรูปหรือเลือกรูปสินค้า');
+    if (!productName.trim()) return flagInvalid('name', 'กรุณากรอกชื่อสินค้า');
+    if (!productCode.trim()) return flagInvalid('code', 'กรุณากรอกรหัสสินค้า');
+    if (stock.trim() === '' || !Number.isInteger(stockValue) || stockValue < 0) return flagInvalid('stock', 'กรอกจำนวนคงเหลือ (ตั้งแต่ 0 ขึ้นไป)');
+    if (!staffName.trim()) return flagInvalid('staff', 'กรุณากรอกหรือเลือกชื่อผู้ลงรายการ');
 
     setSaving(true);
     setError(null);
@@ -278,6 +320,7 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
         },
       });
       saveRecentStaff(branch.id, staffName.trim());
+      navigator.vibrate?.(60); // มือถือสั่นเบา ๆ ให้รู้ว่าบันทึกแล้ว
       const keepOpen = keepOpenRef.current;
       onSaved(productName.trim(), keepOpen);
       if (keepOpen) {
@@ -285,6 +328,8 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
         setLastSaved(productName.trim());
         setSavedCount((count) => count + 1);
         clearItemFields();
+        // เลื่อนกลับขึ้นบน (เห็นข้อความบันทึกแล้ว + พร้อมถ่ายรูปถัดไป)
+        formRef.current?.closest('.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
       setError(errorMessage(err));
@@ -315,28 +360,44 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
         </div>
       }
     >
-      <form id="add-item-form" onSubmit={submit} className="space-y-4">
+      <form id="add-item-form" ref={formRef} onSubmit={submit} className="space-y-4" noValidate>
         {lastSaved && (
           <div className="rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm font-bold text-emerald-700 ring-1 ring-emerald-200">
             ✅ บันทึก “{lastSaved}” แล้ว{savedCount > 1 ? ` (รอบนี้ ${savedCount} รายการ)` : ''} — ถ่ายรูปรายการถัดไปได้เลย
           </div>
         )}
-        <CameraCapture key={entryKey} value={photo} onChange={setPhoto} />
+        <div ref={(el) => { fieldRefs.current.photo = el; }} className={invalid?.field === 'photo' ? 'rounded-2xl ring-4 ring-rose-200' : ''}>
+          <CameraCapture
+            key={entryKey}
+            value={photo}
+            onChange={(next) => {
+              setPhoto(next);
+              if (next && invalid?.field === 'photo') setInvalid(null);
+            }}
+          />
+          {fieldError('photo')}
+        </div>
         <Field label="ชื่อสินค้า" required>
-          <input value={productName} onChange={(event) => setProductName(event.target.value)} className={inputClass} maxLength={200} placeholder="เช่น ถุงหิ้วแอมโมริ (S)" />
+          <input ref={(el) => { fieldRefs.current.name = el; }} value={productName} onChange={(event) => edit('name', setProductName)(event.target.value)} className={fieldClass('name')} maxLength={200} placeholder="เช่น ถุงหิ้วแอมโมริ (S)" />
+          {fieldError('name')}
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="รหัสสินค้า" required>
-            <input value={productCode} onChange={(event) => setProductCode(event.target.value)} className={inputClass} maxLength={100} placeholder="เช่น SP-3396" autoCapitalize="characters" />
+            <input ref={(el) => { fieldRefs.current.code = el; }} value={productCode} onChange={(event) => edit('code', setProductCode)(event.target.value)} className={fieldClass('code')} maxLength={100} placeholder="เช่น SP-3396" autoCapitalize="characters" />
+            {fieldError('code')}
           </Field>
           <Field label="คงเหลือหน้าร้าน" required hint="จำนวนที่เหลือจริงตอนนี้">
-            <input value={stock} onChange={(event) => setStock(event.target.value.replace(/[^0-9]/g, ''))} className={inputClass} inputMode="numeric" placeholder="0" />
+            <input ref={(el) => { fieldRefs.current.stock = el; }} value={stock} onChange={(event) => edit('stock', setStock)(event.target.value.replace(/[^0-9]/g, ''))} className={fieldClass('stock')} inputMode="numeric" placeholder="0" />
+            {fieldError('stock')}
           </Field>
         </div>
         <Field label="หมายเหตุ (ไม่บังคับ)">
           <textarea value={note} onChange={(event) => setNote(event.target.value)} className={`${inputClass} min-h-20`} maxLength={1000} placeholder="เช่น ลูกค้าถามหาบ่อย" />
         </Field>
-        <StaffNameField value={staffName} onChange={setStaffName} recent={recentStaff} known={knownStaff} />
+        <div ref={(el) => { fieldRefs.current.staff = el; }} className={invalid?.field === 'staff' ? 'rounded-2xl p-1 ring-4 ring-rose-200' : ''}>
+          <StaffNameField value={staffName} onChange={edit('staff', setStaffName)} recent={recentStaff} known={knownStaff} />
+          {fieldError('staff')}
+        </div>
         <InlineError message={error} />
         <p className="text-[11px] text-slate-400">ระบบบันทึกชื่อและวันเวลาที่ลงรายการอัตโนมัติ · ลงผิดแก้ไขหรือลบได้จนกว่าสำนักงานใหญ่จะตัดบิล</p>
       </form>
@@ -351,6 +412,10 @@ function EditItemModal({ item, onClose, onSaved }: { item: BillItemDetail | null
   const [productCode, setProductCode] = useState('');
   const [stock, setStock] = useState('');
   const [note, setNote] = useState('');
+  const { branch } = useBranch();
+  const [staffName, setStaffName] = useState('');
+  const [recentStaff, setRecentStaff] = useState<string[]>([]);
+  const knownStaff = useBranchStaffNames(Boolean(item));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -362,10 +427,13 @@ function EditItemModal({ item, onClose, onSaved }: { item: BillItemDetail | null
       setProductCode(item.product_code);
       setStock(item.stock_on_hand === null ? '' : String(item.stock_on_hand));
       setNote(item.staff_note ?? '');
+      const recent = readRecentStaff(branch.id);
+      setRecentStaff(recent);
+      setStaffName(recent[0] ?? '');
       setError(null);
     }, 0);
     return () => clearTimeout(timer);
-  }, [item]);
+  }, [item, branch.id]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -375,14 +443,16 @@ function EditItemModal({ item, onClose, onSaved }: { item: BillItemDetail | null
     if (!productCode.trim()) return setError('กรุณากรอกรหัสสินค้า');
     if (stock.trim() === '' || !Number.isInteger(stockValue) || stockValue < 0) return setError('จำนวนคงเหลือต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
 
+    if (!staffName.trim()) return setError('กรุณาระบุชื่อผู้แก้ไข');
     setSaving(true);
     setError(null);
     try {
       const photoPath = photo ? await uploadPhoto('/api/stock-request/branch/upload-url', photo) : null;
       await apiFetch(`/api/stock-request/branch/items/${item.id}`, {
         method: 'PATCH',
-        json: { productName: productName.trim(), productCode: productCode.trim(), stockOnHand: stockValue, staffNote: note.trim() || null, photoPath },
+        json: { productName: productName.trim(), productCode: productCode.trim(), stockOnHand: stockValue, staffNote: note.trim() || null, photoPath, staffName: staffName.trim() },
       });
+      saveRecentStaff(branch.id, staffName.trim());
       onSaved(productName.trim());
     } catch (err) {
       setError(errorMessage(err));
@@ -431,6 +501,7 @@ function EditItemModal({ item, onClose, onSaved }: { item: BillItemDetail | null
           <Field label="หมายเหตุ (ไม่บังคับ)">
             <textarea value={note} onChange={(event) => setNote(event.target.value)} className={`${inputClass} min-h-20`} maxLength={1000} />
           </Field>
+          <StaffNameField label="ชื่อผู้แก้ไข" value={staffName} onChange={setStaffName} recent={recentStaff} known={knownStaff} />
           <InlineError message={error} />
           <p className="text-[11px] text-slate-400">ลงรายการโดย {item.reported_by_name} · {formatDateTime(item.created_at)}</p>
         </form>

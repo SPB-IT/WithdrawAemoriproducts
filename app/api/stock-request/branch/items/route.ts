@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireBranchContext } from '@/lib/stock-request/branch-context';
 import { ApiError, handle } from '@/lib/stock-request/errors';
-import { assertPhotoUploaded, rpc } from '@/lib/stock-request/queries';
+import { assertPhotoUploaded, logBranchAction, pickItemFields, rpc } from '@/lib/stock-request/queries';
 import type { BillItemRow } from '@/lib/stock-request/types';
 import { optionalText, readJson, requireInt, requireText, requireUuid } from '@/lib/stock-request/validation';
 
@@ -16,6 +16,7 @@ export const POST = handle(async (request: NextRequest) => {
   if (!photoPath.startsWith(`${branch.id}/`)) throw new ApiError(400, 'SR_INVALID_PHOTO', 'รูปภาพไม่ถูกต้อง');
   await assertPhotoUploaded(photoPath);
 
+  const staffName = requireText(body.staffName, 100, 'ชื่อผู้ลงรายการ');
   const item = await rpc<BillItemRow>('add_branch_item', {
     p_branch_id: branch.id,
     p_item_id: requireUuid(body.itemId, 'รหัสรายการ'),
@@ -24,7 +25,8 @@ export const POST = handle(async (request: NextRequest) => {
     p_stock_on_hand: requireInt(body.stockOnHand, 'จำนวนคงเหลือ'),
     p_staff_note: optionalText(body.staffNote, 1000),
     p_photo_path: photoPath,
-    p_staff_name: requireText(body.staffName, 100, 'ชื่อผู้ลงรายการ'),
+    p_staff_name: staffName,
   });
+  await logBranchAction({ billId: item.bill_id, itemId: item.id, staffName, action: 'item_add', after: pickItemFields(item) });
   return NextResponse.json({ item });
 });

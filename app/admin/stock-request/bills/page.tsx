@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { IssueBadge } from '@/components/stock-request/BillParts';
 import { EmptyState, ErrorState, InlineError, LoadingState, Spinner, StatusBadge, inputClass, secondaryButton } from '@/components/stock-request/ui';
 import { STATUS_LABEL, STATUS_ORDER } from '@/lib/stock-request/constants';
 import { apiFetch, errorMessage, formatDateTime, todayBangkok } from '@/lib/stock-request/client';
@@ -180,7 +181,10 @@ export default function HqBillsPage() {
                     <td className="px-4 py-3 font-mono font-bold">{bill.bill_no}</td>
                     <td className="px-4 py-3">{bill.branch_name}</td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={bill.status as BillStatus} />
+                      <div className="flex flex-wrap items-center gap-1">
+                        <StatusBadge status={bill.status as BillStatus} />
+                        <IssueBadge bill={bill} />
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center font-bold">{bill.item_count}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{formatDateTime(bill.created_at)}</td>

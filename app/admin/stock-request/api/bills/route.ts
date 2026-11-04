@@ -46,7 +46,7 @@ export const GET = handle(async (request: NextRequest) => {
     ...bill,
     branch_name: branchNames.get(bill.branch_id) ?? `สาขา ${bill.branch_id}`,
     item_count: itemCount?.[0]?.count ?? 0,
-    billed_by_name: bill.billed_by ? adminNames.get(bill.billed_by) ?? null : null,
+    billed_by_name: bill.responsible_name ?? (bill.billed_by ? adminNames.get(bill.billed_by) ?? null : null),
   }));
   return NextResponse.json({ bills, total: count ?? bills.length, page, pageSize: PAGE_SIZE });
 });

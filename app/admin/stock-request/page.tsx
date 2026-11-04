@@ -9,6 +9,7 @@ import type { BillStatus } from '@/lib/stock-request/types';
 
 interface DashboardData {
   branchCount: number;
+  openIssues: number;
   statusCounts: Record<BillStatus, number>;
   pendingWithItems: { id: string; bill_no: string; branch_name: string; item_count: number; created_at: string; updated_at: string }[];
   latest: {
@@ -80,11 +81,19 @@ export default function HqDashboardPage() {
         </button>
       </div>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
           <p className="text-xs font-black text-slate-500">สาขาทั้งหมด</p>
           <p className="mt-2 text-3xl font-black text-slate-800">{formatNumber(data.branchCount)}</p>
         </div>
+        <Link
+          href="/admin/stock-request/branches"
+          className={`rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-md ${data.openIssues ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-white'}`}
+        >
+          <p className={`text-xs font-black ${data.openIssues ? 'text-rose-700' : 'text-slate-500'}`}>⚠️ บิลมีปัญหา (ของไม่ครบ)</p>
+          <p className="mt-2 text-3xl font-black text-slate-800">{formatNumber(data.openIssues)}</p>
+          <p className={`mt-1 text-xs font-semibold ${data.openIssues ? 'text-rose-600' : 'text-slate-400'}`}>ดูรายสาขา →</p>
+        </Link>
         {STATUS_ORDER.map((status) => {
           const [box, title, link] = CARD_STYLE[status];
           return (

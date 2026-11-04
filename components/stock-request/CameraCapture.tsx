@@ -69,10 +69,18 @@ export default function CameraCapture({ value, onChange }: { value: Blob | null;
     if (!video || !video.videoWidth) return;
     setProcessing(true);
     try {
+      // ครอปให้ตรงกับที่เห็นในกรอบ (ภาพสดแสดงแบบ object-cover) — รูปที่ได้จะเหมือนที่เห็นตอนถ่าย
+      const sourceW = video.videoWidth;
+      const sourceH = video.videoHeight;
+      const boxRatio = video.clientWidth && video.clientHeight ? video.clientWidth / video.clientHeight : 4 / 3;
+      let cropW = sourceW;
+      let cropH = sourceH;
+      if (sourceW / sourceH > boxRatio) cropW = Math.round(sourceH * boxRatio);
+      else cropH = Math.round(sourceW / boxRatio);
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext('2d')?.drawImage(video, 0, 0);
+      canvas.width = cropW;
+      canvas.height = cropH;
+      canvas.getContext('2d')?.drawImage(video, (sourceW - cropW) / 2, (sourceH - cropH) / 2, cropW, cropH, 0, 0, cropW, cropH);
       const raw = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
       if (!raw) throw new Error('ถ่ายรูปไม่สำเร็จ');
       onChange(await compressImage(raw));

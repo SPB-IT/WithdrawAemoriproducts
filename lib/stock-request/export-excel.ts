@@ -106,7 +106,7 @@ export async function exportBillsExcel(bills: BillDetail[], filename: string) {
       { header: 'จำนวนรายการ', key: 'count', width: 12 },
       { header: 'สร้างเมื่อ', key: 'created', width: 18 },
       { header: 'ตัดบิลเมื่อ', key: 'billed_at', width: 18 },
-      { header: 'ผู้ตัดบิล', key: 'billed_by', width: 18 },
+      { header: 'ผู้รับผิดชอบ (ตัดบิล)', key: 'billed_by', width: 18 },
       { header: 'จัดส่งเมื่อ', key: 'shipped_at', width: 18 },
       { header: 'ผู้จัดส่ง', key: 'shipped_by', width: 18 },
       { header: 'ได้รับเมื่อ', key: 'received_at', width: 18 },
