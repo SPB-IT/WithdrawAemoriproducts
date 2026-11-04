@@ -1,0 +1,411 @@
+<title>คู่มือแจ้งสินค้าใกล้หมด Aemori</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;700;800&family=Sarabun:wght@400;600;700&display=swap">
+<style>
+  /* Layout: แผ่นโปสเตอร์ 2 แผ่นซ้อนกัน (หน้าบ้าน / หลังบ้าน) · แถบสถานะ 5 ขั้น · ขั้นตอนเป็นการ์ดพร้อม "ปุ่มจริง" ที่ต้องกด
+     ใช้โทนชมพูเดียวกับแอป Aemori — ตั้งใจเป็นธีมสว่างธีมเดียว (โปสเตอร์ติดหน้าร้าน/แชร์ใน LINE) */
+  :root {
+    color-scheme: light;
+    --ink: #3b1730;
+    --ink-soft: #7a5368;
+    --paper: #fff7fa;
+    --sheet: #ffffff;
+    --pink: #ec4899;
+    --rose: #f43f5e;
+    --blush: #fde7f1;
+    --line: #f6cfe0;
+    --mint: #059669;
+    --mint-bg: #e7f8f1;
+    --amber: #b45309;
+    --amber-bg: #fff3dc;
+    --sky: #0369a1;
+    --sky-bg: #e6f3fb;
+    --red: #e11d48;
+    --red-bg: #ffe8ee;
+    --display: 'Prompt', 'Noto Sans Thai', 'Leelawadee UI', sans-serif;
+    --body: 'Sarabun', 'Noto Sans Thai', 'Leelawadee UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.6 var(--body);
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding-block: 20px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: grid;
+    gap: 28px;
+  }
+  .switch {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .switch a {
+    font: 600 15px var(--display);
+    color: var(--ink);
+    text-decoration: none;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: var(--sheet);
+    border: 1px solid var(--line);
+  }
+  .switch a:hover, .switch a:focus-visible { border-color: var(--pink); color: var(--pink); outline: none; }
+
+  .sheet {
+    background: var(--sheet);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px -28px rgba(236, 72, 153, 0.45);
+    scroll-margin-top: 16px;
+  }
+  .masthead {
+    background: linear-gradient(115deg, var(--pink), var(--rose));
+    color: #fff;
+    padding: 28px clamp(20px, 4vw, 40px) 26px;
+    display: grid;
+    gap: 6px;
+  }
+  .eyebrow { font: 600 13px var(--display); letter-spacing: 0.06em; opacity: 0.85; }
+  .masthead h1 { margin: 0; font: 800 clamp(28px, 5vw, 44px)/1.15 var(--display); text-wrap: balance; }
+  .masthead p { margin: 0; max-width: 60ch; opacity: 0.92; }
+  .who { display: inline-flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .who span { background: rgba(255, 255, 255, 0.2); border-radius: 999px; padding: 4px 12px; font: 600 13px var(--display); }
+
+  /* แถบสถานะบิล: ขั้นที่ฝั่งนี้ต้องลงมือจะเป็นสีชมพูเต็ม */
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    padding: 20px clamp(16px, 4vw, 40px);
+    background: var(--blush);
+    border-bottom: 1px solid var(--line);
+  }
+  .stage { text-align: center; display: grid; justify-items: center; gap: 6px; position: relative; }
+  .stage::after {
+    content: '';
+    position: absolute;
+    top: 21px;
+    left: calc(50% + 24px);
+    right: calc(-50% + 24px);
+    height: 3px;
+    background: var(--line);
+    border-radius: 3px;
+  }
+  .stage:last-child::after { display: none; }
+  .dot {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 20px;
+    background: var(--sheet);
+    border: 2px solid var(--line);
+  }
+  .stage.mine .dot { background: var(--pink); border-color: var(--pink); box-shadow: 0 6px 14px -6px var(--pink); }
+  .stage b { font: 700 13px/1.3 var(--display); }
+  .stage small { font-size: 12px; color: var(--ink-soft); line-height: 1.3; }
+  .stage.mine small { color: var(--pink); font-weight: 700; }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 24px clamp(16px, 4vw, 40px) 8px;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+    padding: 16px;
+    border-radius: 20px;
+    background: var(--paper);
+  }
+  .step .num {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: var(--sheet);
+    border: 2px solid var(--pink);
+    color: var(--pink);
+    font: 800 18px var(--display);
+  }
+  .step h2 { margin: 0 0 4px; font: 700 18px/1.35 var(--display); text-wrap: balance; }
+  .step ul { margin: 0; padding-left: 18px; color: var(--ink-soft); }
+  .step li { margin: 2px 0; }
+  .step li strong { color: var(--ink); }
+
+  /* หน้าตาปุ่มจริงในแอป — กดอันนี้ */
+  .btn {
+    display: inline-block;
+    font: 700 13px/1.2 var(--display);
+    padding: 5px 10px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, var(--pink), var(--rose));
+    color: #fff;
+    white-space: nowrap;
+  }
+  .btn.ghost { background: var(--sheet); color: var(--pink); border: 1px solid var(--line); }
+  .btn.ok { background: var(--mint); }
+  .btn.no { background: var(--red); }
+  .press { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+  .wide { grid-column: 1 / -1; }
+  .note {
+    margin: 8px clamp(16px, 4vw, 40px) 0;
+    border-radius: 18px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 4px;
+  }
+  .note.warn { background: var(--amber-bg); color: var(--amber); }
+  .note.info { background: var(--sky-bg); color: var(--sky); }
+  .note b { font-family: var(--display); }
+  .tips {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding: 20px clamp(16px, 4vw, 40px) 28px;
+  }
+  .tip {
+    border: 1px dashed var(--line);
+    border-radius: 16px;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+  .tip b { display: block; color: var(--ink); font: 700 14px var(--display); margin-bottom: 2px; }
+  .footer { text-align: center; font-size: 13px; color: var(--ink-soft); }
+
+  @media (max-width: 760px) {
+    .steps, .tips { grid-template-columns: minmax(0, 1fr); }
+    .flow { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+    .dot { width: 36px; height: 36px; font-size: 16px; }
+    .stage::after { top: 17px; left: calc(50% + 20px); right: calc(-50% + 20px); }
+    .stage b { font-size: 11px; }
+    .stage small { display: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .switch a { transition: border-color 0.15s, color 0.15s; }
+  }
+</style>
+
+<div class="wrap">
+  <nav class="switch" aria-label="เลือกคู่มือ">
+    <a href="#branch">🏪 หน้าบ้าน · พนักงานสาขา</a>
+    <a href="#hq">🏢 หลังบ้าน · สำนักงานใหญ่</a>
+  </nav>
+
+  <!-- ================= หน้าบ้าน ================= -->
+  <section class="sheet" id="branch" aria-labelledby="branch-title">
+    <header class="masthead">
+      <span class="eyebrow">คู่มือใช้งาน · ระบบแจ้งสินค้าใกล้หมด Aemori</span>
+      <h1 id="branch-title">หน้าบ้าน สำหรับพนักงานสาขา</h1>
+      <p>เห็นของใกล้หมดหน้าร้าน ถ่ายรูปแจ้งเข้าบิลได้ทันที แล้วรอเช็คของตอนสำนักงานใหญ่จัดส่งมาถึง</p>
+      <div class="who"><span>📱 ใช้บนมือถือ</span><span>ไม่ต้องใช้รหัส</span><span>ลงชื่อทุกครั้งที่ทำรายการ</span></div>
+    </header>
+
+    <div class="flow" aria-label="สถานะของบิล">
+      <div class="stage mine"><span class="dot">📷</span><b>รอตัดบิล</b><small>สาขาแจ้งของ</small></div>
+      <div class="stage"><span class="dot">✂️</span><b>ตัดบิลแล้ว</b><small>สนญ.</small></div>
+      <div class="stage"><span class="dot">📦</span><b>กำลังแพ็คของ</b><small>สนญ.</small></div>
+      <div class="stage"><span class="dot">🚚</span><b>จัดส่งแล้ว</b><small>สนญ.</small></div>
+      <div class="stage mine"><span class="dot">✅</span><b>ได้รับสินค้าแล้ว</b><small>สาขาเช็คของ</small></div>
+    </div>
+
+    <div class="steps">
+      <article class="step">
+        <span class="num">1</span>
+        <div>
+          <h2>เข้าระบบและเลือกสาขา</h2>
+          <ul>
+            <li>หน้าแรก กด <strong>แจ้งสินค้าใกล้หมด</strong></li>
+            <li>เลือกสาขาที่ประจำอยู่ ครั้งต่อไประบบจำสาขาไว้ให้</li>
+          </ul>
+          <div class="press"><span class="btn ghost">เลือกสาขา</span></div>
+        </div>
+      </article>
+
+      <article class="step">
+        <span class="num">2</span>
+        <div>
+          <h2>ถ่ายรูปแจ้งของใกล้หมด</h2>
+          <ul>
+            <li>ถ่ายรูปสินค้า <strong>1 รูป</strong> ให้เห็นฉลากชัด</li>
+            <li>ใส่ชื่อสินค้า รหัส และ<strong>จำนวนที่เหลือหน้าร้าน</strong></li>
+            <li>ลงชื่อ หรือกดชื่อที่เคยใช้ในสาขานี้</li>
+          </ul>
+          <div class="press"><span class="btn">📷 เพิ่มสินค้าใกล้หมด</span><span class="btn ghost">💾 บันทึก แล้วเพิ่มรายการต่อ</span></div>
+        </div>
+      </article>
+
+      <article class="step">
+        <span class="num">3</span>
+        <div>
+          <h2>ลงผิด แก้ได้ก่อนตัดบิล</h2>
+          <ul>
+            <li>แตะรายการในหน้า <strong>บิลปัจจุบัน</strong> เพื่อแก้ไขหรือลบ</li>
+            <li>ต้องลงชื่อคนที่แก้ทุกครั้ง</li>
+            <li>สำนักงานใหญ่ตัดบิลแล้ว จะแก้ไม่ได้อีก</li>
+          </ul>
+          <div class="press"><span class="btn ghost">บันทึกการแก้ไข</span></div>
+        </div>
+      </article>
+
+      <article class="step">
+        <span class="num">4</span>
+        <div>
+          <h2>ติดตามสถานะบิล</h2>
+          <ul>
+            <li>แท็บ <strong>ติดตามสถานะ</strong> ดูว่าบิลอยู่ขั้นไหน ใครทำ เมื่อไร</li>
+            <li>กระดิ่ง 🔔 แจ้งเมื่อตัดบิล จัดส่ง หรือมีการแก้รายการ</li>
+          </ul>
+          <div class="press"><span class="btn ghost">ติดตามสถานะ</span></div>
+        </div>
+      </article>
+
+      <article class="step wide">
+        <span class="num">5</span>
+        <div>
+          <h2>ของมาถึง เช็คของแล้วยืนยันรับ</h2>
+          <ul>
+            <li>บิลที่ <strong>จัดส่งแล้ว</strong> กดเช็คของ แล้วลงชื่อผู้เช็คของ</li>
+            <li>ติ๊กทีละรายการ ได้รับ หรือ ไม่ได้รับ/ไม่ครบ (<strong>ต้องเขียนหมายเหตุ</strong> เช่น ได้รับของผิดรายการ)</li>
+            <li>กดยืนยันรับสินค้า แล้วส่งออก PDF เก็บเป็นหลักฐานได้</li>
+          </ul>
+          <div class="press">
+            <span class="btn">📦 เช็คของ / ยืนยันรับสินค้า</span>
+            <span class="btn ok">✓ ได้รับ</span>
+            <span class="btn no">✗ ไม่ได้รับ/ไม่ครบ</span>
+            <span class="btn ghost">📄 ส่งออก PDF</span>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="note warn">
+      <b>⚠️ ถ้าของมาไม่ครบ</b>
+      <span>บิลจะถูกปักไว้จนกว่าสำนักงานใหญ่จะแก้ไข ของที่ขาดอาจถูก <b>ยกยอดไปบิลถัดไป</b> จะเห็นเป็นรายการที่มีป้าย “🏢 ยกยอดจากบิล AMR-…” อยู่ในบิลปัจจุบัน ไม่ต้องแจ้งซ้ำ</span>
+    </div>
+
+    <div class="tips">
+      <div class="tip"><b>รูปชัด งานเร็ว</b>ถ่ายให้เห็นชื่อหรือบาร์โค้ดบนฉลาก คนจัดของหยิบถูกตั้งแต่ครั้งแรก</div>
+      <div class="tip"><b>จำนวนที่เหลือ</b>นับของที่วางขายจริงหน้าร้าน ถ้าหมดแล้วใส่ 0</div>
+      <div class="tip"><b>ประวัติ 3 บิล</b>ระบบเก็บบิลล่าสุด 3 บิลของสาขา บิลที่ยังมีปัญหาจะไม่ถูกลบ</div>
+    </div>
+  </section>
+
+  <!-- ================= หลังบ้าน ================= -->
+  <section class="sheet" id="hq" aria-labelledby="hq-title">
+    <header class="masthead">
+      <span class="eyebrow">คู่มือใช้งาน · ระบบแจ้งสินค้าใกล้หมด Aemori</span>
+      <h1 id="hq-title">หลังบ้าน สำหรับสำนักงานใหญ่</h1>
+      <p>รวมรายการจากทุกสาขา ตัดบิลพร้อมกัน แพ็คของ จัดส่ง และตามแก้ปัญหาจนบิลจบ</p>
+      <div class="who"><span>🔐 เข้าด้วยรหัสผู้ดูแล</span><span>ติ๊ก “จำเครื่องนี้” ได้</span><span>ทุกขั้นต้องใส่ชื่อคนทำ</span></div>
+    </header>
+
+    <div class="flow" aria-label="สถานะของบิล">
+      <div class="stage"><span class="dot">📷</span><b>รอตัดบิล</b><small>สาขาแจ้งของ</small></div>
+      <div class="stage mine"><span class="dot">✂️</span><b>ตัดบิลแล้ว</b><small>ตัดบิลทุกสาขา</small></div>
+      <div class="stage mine"><span class="dot">📦</span><b>แพ็คของเสร็จ</b><small>ติ๊กครบทุกรายการ</small></div>
+      <div class="stage mine"><span class="dot">🚚</span><b>จัดส่งแล้ว</b><small>กดจัดส่ง</small></div>
+      <div class="stage"><span class="dot">✅</span><b>ได้รับสินค้าแล้ว</b><small>สาขาเช็คของ</small></div>
+    </div>
+
+    <div class="steps">
+      <article class="step">
+        <span class="num">1</span>
+        <div>
+          <h2>ดูภาพรวมที่แดชบอร์ด</h2>
+          <ul>
+            <li>จำนวนบิลแต่ละสถานะ และ<strong>บิลมีปัญหา</strong></li>
+            <li>สรุปสินค้า: ของที่สาขาแจ้งรอบนี้ ของหมดที่สาขา รอแพ็ค และของขาด</li>
+          </ul>
+          <div class="press"><span class="btn ghost">📊 แดชบอร์ด</span></div>
+        </div>
+      </article>
+
+      <article class="step">
+        <span class="num">2</span>
+        <div>
+          <h2>ตัดบิลทุกสาขาพร้อมกัน</h2>
+          <ul>
+            <li>หน้า <strong>บิลทุกสาขา</strong> กดปุ่มใหญ่ ใส่ชื่อผู้รับผิดชอบบิลครั้งเดียว</li>
+            <li>ตัดเฉพาะบิลที่มีรายการ ระบบเปิดบิลใหม่ให้ทุกสาขาเอง</li>
+            <li>อยากตรวจทีละบิล เปิดบิลแล้วกดตรวจและตัดบิล</li>
+          </ul>
+          <div class="press"><span class="btn">✂️ ตัดบิลทุกสาขา</span><span class="btn ghost">✂️ ตรวจและตัดบิล</span></div>
+        </div>
+      </article>
+
+      <article class="step">
+        <span class="num">3</span>
+        <div>
+          <h2>แพ็คของ</h2>
+          <ul>
+            <li>เมนู <strong>แพ็คของ</strong> เปิดบิล ลงชื่อผู้แพ็ค แล้วแตะติ๊กทีละรายการ</li>
+            <li>ไม่มีของ หรือใช้ของแทน ต้องเขียนหมายเหตุ ระบบแจ้งสาขาให้</li>
+            <li>ให้คนอื่นเดินหยิบ: ส่ง<strong>ลิงก์หยิบของ</strong>ทาง LINE เปิดได้ไม่ต้องใช้รหัส ใช้ได้ 24 ชม.</li>
+          </ul>
+          <div class="press"><span class="btn ghost">📦 แพ็คของ</span><span class="btn ghost">🔗 ลิงก์หยิบของ</span><span class="btn no">✕ ไม่มีของ</span></div>
+        </div>
+      </article>
+
+      <article class="step">
+        <span class="num">4</span>
+        <div>
+          <h2>จัดส่ง</h2>
+          <ul>
+            <li>แพ็คครบทุกรายการก่อน ปุ่มจัดส่งถึงจะกดได้</li>
+            <li>ใส่<strong>ชื่อผู้ส่ง</strong> สาขาได้รับแจ้งให้เตรียมเช็คของ</li>
+            <li>พิมพ์ใบจัดสินค้า A4 หรือส่งออก Excel / PDF ได้จากหน้าบิล</li>
+          </ul>
+          <div class="press"><span class="btn">🚚 จัดส่ง</span><span class="btn ghost">🧾 ใบจัดสินค้า A4</span></div>
+        </div>
+      </article>
+
+      <article class="step wide">
+        <span class="num">5</span>
+        <div>
+          <h2>สาขาแจ้งของไม่ครบ แก้ไขปัญหาให้จบ</h2>
+          <ul>
+            <li>บิลขึ้นป้าย ⚠️ ในแดชบอร์ดและหน้าประวัติบิล จนกว่าจะกดแก้ไข</li>
+            <li>เลือกทีละรายการที่ขาด: <strong>ยกยอดตัวเดิม</strong> / <strong>ยกยอดเป็นของทดแทน</strong> / <strong>ไม่ยกยอด</strong> (เขียนหมายเหตุ)</li>
+            <li>ของที่ยกยอดจะเข้าบิลรอบถัดไปของสาขาทันที สาขาเห็นที่มาของรายการ</li>
+          </ul>
+          <div class="press">
+            <span class="btn">แก้ไขปัญหา / ยกยอดไปบิลถัดไป</span>
+            <span class="btn ghost">↪ ยกยอดตัวเดิม</span>
+            <span class="btn ghost">🔄 ยกยอดเป็นของทดแทน</span>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="note info">
+      <b>🗂️ ดูย้อนหลัง</b>
+      <span>หน้า <b>ประวัติบิล</b> เก็บบิลที่จบแล้ว สาขาละ 3 บิลล่าสุด กรองดูทีละสาขาได้ · หน้า <b>ประวัติการแก้ไข</b> บอกว่าใครแก้อะไร เมื่อไร พร้อมเหตุผล</span>
+    </div>
+
+    <div class="tips">
+      <div class="tip"><b>ตัดบิลพร้อมกัน</b>ตัดรอบเดียวทุกสาขา แพ็คและจัดส่งเป็นรอบ ไม่ตกหล่น</div>
+      <div class="tip"><b>ชื่อคนทำงาน</b>ผู้รับผิดชอบ ผู้แพ็ค ผู้ส่ง ถูกบันทึกในไทม์ไลน์ของบิลทุกขั้น</div>
+      <div class="tip"><b>จัดการสาขา</b>เพิ่ม/ลบสาขาที่ระบบเบิกสินค้า → คลังสินค้า สาขาที่มีประวัติจะถูกซ่อนแทนการลบ</div>
+    </div>
+  </section>
+
+  <p class="footer">Aemori · ระบบแจ้งสินค้าใกล้หมด · คู่มือฉบับ 4 พ.ย. 2569</p>
+</div>

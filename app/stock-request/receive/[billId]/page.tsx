@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IssueBadge, IssueBanner } from '@/components/stock-request/BillParts';
+import { IssueBadge, IssueBanner, RemovedItems } from '@/components/stock-request/BillParts';
 import BranchShell, { useBranch } from '@/components/stock-request/BranchShell';
 import StaffNameField, { readRecentStaff, saveRecentStaff, useBranchStaffNames } from '@/components/stock-request/StaffNameField';
 import { ConfirmDialog, ErrorState, InlineError, LoadingState, PhotoThumb, Spinner, StatusBadge, inputClass, primaryButton, secondaryButton } from '@/components/stock-request/ui';
@@ -130,7 +130,6 @@ function ReceiveCheck() {
   if (!bill) return <LoadingState label="กำลังโหลดบิล..." />;
 
   const items = bill.items.filter((item) => !item.is_removed);
-  const removed = bill.items.filter((item) => item.is_removed);
   const checked = items.filter((item) => item.received_state).length;
   const missing = items.filter((item) => item.received_state === 'missing').length;
   const checkable = bill.status === 'shipped';
@@ -236,11 +235,7 @@ function ReceiveCheck() {
         })}
       </ul>
 
-      {removed.length > 0 && (
-        <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          สำนักงานใหญ่ไม่ได้จัดส่ง: {removed.map((item) => item.product_name).join(', ')}
-        </p>
-      )}
+      <RemovedItems bill={bill} />
 
       {checkable && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-pink-100 bg-white/95 p-3 backdrop-blur">

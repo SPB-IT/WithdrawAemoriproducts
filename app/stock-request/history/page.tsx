@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AuditList, IssueBadge, IssueBanner, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
+import { AuditList, IssueBadge, IssueBanner, RemovedItems, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
 import BranchShell from '@/components/stock-request/BranchShell';
 import { EmptyState, ErrorState, LoadingState, PhotoThumb, StatusBadge, primaryButton, secondaryButton } from '@/components/stock-request/ui';
 import { apiFetch, errorMessage, formatDateTime, formatNumber } from '@/lib/stock-request/client';
@@ -54,7 +54,6 @@ function History() {
 function HistoryBill({ bill }: { bill: BillDetail }) {
   const [open, setOpen] = useState(bill.status === 'shipped');
   const items = bill.items.filter((item) => !item.is_removed);
-  const removed = bill.items.filter((item) => item.is_removed);
   const itemNames = useMemo(() => new Map(bill.items.map((item) => [item.id, item.product_name])), [bill.items]);
 
   return (
@@ -116,18 +115,7 @@ function HistoryBill({ bill }: { bill: BillDetail }) {
             ))}
           </ul>
 
-          {removed.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs font-bold text-slate-500">รายการที่สำนักงานใหญ่นำออก</p>
-              <ul className="space-y-1">
-                {removed.map((item) => (
-                  <li key={item.id} className="rounded-lg bg-white px-3 py-2 text-xs text-slate-400 line-through ring-1 ring-slate-100">
-                    {item.product_name} ({item.product_code})
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <RemovedItems bill={bill} />
 
           <div>
             <p className="mb-1.5 text-xs font-bold text-slate-500">ประวัติการแก้ไขจากสำนักงานใหญ่</p>

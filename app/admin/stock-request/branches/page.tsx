@@ -24,7 +24,7 @@ interface DoneGroup {
 }
 
 // ประวัติบิล: บิลที่มีปัญหาค้าง (ทุกสาขา) + บิลที่จบแล้ว (สาขาละ 1–3 บิล)
-// แบบ master–detail: ซ้าย = รายชื่อสาขา (สีประจำสาขา) · ขวา = บิลเรียงตามวันที่ได้รับ (มือถือ: สาขาเป็นชิปเลื่อนแนวนอน)
+// ซ้าย = รายชื่อสาขา (สีประจำสาขา) · ขวา = ตารางบิลจัดกลุ่มตามสาขา แบบเดียวกับหน้าบิลทุกสาขา (มือถือ: สาขาเป็นชิปเลื่อนแนวนอน)
 export default function BranchesOverviewPage() {
   const [issues, setIssues] = useState<IssueRow[] | null>(null);
   const [groups, setGroups] = useState<DoneGroup[] | null>(null);
@@ -55,16 +55,7 @@ export default function BranchesOverviewPage() {
     const q = query.trim().toLowerCase();
     return (groups ?? []).filter((group) => !q || group.branch_name.toLowerCase().includes(q) || group.bills.some((bill) => bill.bill_no.toLowerCase().includes(q)));
   }, [groups, query]);
-  // บิลของสาขาที่เลือก (หรือทุกสาขา) เรียงตามวันที่ได้รับ ใหม่ → เก่า แล้วแบ่งกลุ่มตามวัน
-  const days = useMemo(() => {
-    const rows = branchList
-      .filter((group) => !branchFilter || String(group.branch_id) === branchFilter)
-      .flatMap((group) => group.bills.map((bill, index) => ({ bill, group, index })))
-      .sort((a, b) => (b.bill.received_at ?? '').localeCompare(a.bill.received_at ?? ''));
-    const map = new Map<string, typeof rows>();
-    for (const row of rows) map.set(dayLabel(row.bill.received_at), [...(map.get(dayLabel(row.bill.received_at)) ?? []), row]);
-    return [...map];
-  }, [branchList, branchFilter]);
+  const shownGroups = branchList.filter((group) => !branchFilter || String(group.branch_id) === branchFilter);
 
   if (error && !issues) return <ErrorState message={error} onRetry={load} />;
   if (!issues || !groups) return <LoadingState />;
@@ -115,7 +106,7 @@ export default function BranchesOverviewPage() {
           />
           <ul className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:mx-0 lg:block lg:space-y-1 lg:overflow-visible lg:px-0">
             <li className="shrink-0">
-              <BranchButton active={!branchFilter} onClick={() => setBranchFilter('')} color="bg-slate-700" initials="ทั้ง" name="ทุกสาขา" sub={`${totalBills} บิล · ${groups.length} สาขา`} />
+              <BranchButton active={!branchFilter} onClick={() => setBranchFilter('')} color="bg-slate-700" initials="🗂️" name="ทุกสาขา" sub={`${totalBills} บิล · ${groups.length} สาขา`} />
             </li>
             {branchList.map((group) => (
               <li key={group.branch_id} className="shrink-0">
@@ -132,23 +123,51 @@ export default function BranchesOverviewPage() {
           </ul>
         </aside>
 
-        {/* บิลที่จบแล้ว เรียงตามวันที่ได้รับ */}
-        <div className="min-w-0 space-y-4">
-          {days.length === 0 ? (
+        {/* บิลที่จบแล้ว จัดกลุ่มตามสาขา */}
+        <div className="min-w-0">
+          {shownGroups.length === 0 ? (
             <EmptyState icon="🗂️" title="ยังไม่มีบิลที่จบแล้ว" description="บิลที่สาขากดยืนยันได้รับสินค้าแล้ว (และไม่มีปัญหาค้าง) จะมาแสดงที่นี่" />
           ) : (
-            days.map(([day, rows]) => (
-              <div key={day}>
-                <p className="mb-2 px-1 text-xs font-black text-slate-400">
-                  {day} · {rows.length} บิล
-                </p>
-                <ul className="overflow-hidden rounded-2xl border border-pink-100 bg-white shadow-sm">
-                  {rows.map(({ bill, group, index }) => (
-                    <HistoryRow key={bill.id} bill={bill} branchName={group.branch_name} color={branchColor(group.branch_id)} order={index} />
+            <div className="overflow-hidden rounded-2xl border border-pink-100 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">บิล</th>
+                      <th className="px-4 py-3">เลขที่บิล</th>
+                      <th className="px-4 py-3">ได้รับเมื่อ</th>
+                      <th className="px-4 py-3 text-center">รายการ</th>
+                      <th className="px-4 py-3">สถานะ</th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  {shownGroups.map((group) => (
+                    <tbody key={group.branch_id} className="divide-y divide-slate-100 border-t-4 border-pink-50">
+                      <tr className="bg-pink-50/70">
+                        <td colSpan={6} className="px-4 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-2 text-sm font-black text-slate-800">
+                              <span className={`h-3 w-3 rounded-full ${branchColor(group.branch_id)}`} aria-hidden />
+                              {group.branch_name}
+                              <span className="text-xs font-bold text-slate-400">{group.bills.length} บิล</span>
+                              {group.archived && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">ซ่อนแล้ว</span>}
+                            </span>
+                            {!group.archived && (
+                              <Link href={`/admin/stock-request/branches/${group.branch_id}`} className="text-xs font-bold text-pink-600 hover:underline">
+                                ดูสาขา →
+                              </Link>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {group.bills.map((bill, index) => (
+                        <HistoryRow key={bill.id} bill={bill} order={index} />
+                      ))}
+                    </tbody>
                   ))}
-                </ul>
+                </table>
               </div>
-            ))
+            </div>
           )}
         </div>
       </section>
@@ -167,18 +186,6 @@ function branchInitials(name: string) {
 }
 
 const dayFormat = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' });
-const weekdayFormat = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long' });
-const timeFormat = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
-
-function dayLabel(iso: string | null) {
-  if (!iso) return 'ไม่ทราบวันที่';
-  const date = new Date(iso);
-  const label = dayFormat.format(date);
-  if (label === dayFormat.format(new Date())) return `วันนี้ · ${label}`;
-  if (label === dayFormat.format(new Date(Date.now() - 86_400_000))) return `เมื่อวาน · ${label}`;
-  return `${weekdayFormat.format(date)} · ${label}`;
-}
-
 const shortDate = (iso: string | null | undefined) => (iso ? dayFormat.format(new Date(iso)) : '-');
 
 function BranchButton({ active, onClick, color, initials, name, sub }: { active: boolean; onClick: () => void; color: string; initials: string; name: string; sub: string }) {
@@ -200,43 +207,36 @@ function BranchButton({ active, onClick, color, initials, name, sub }: { active:
 
 const ORDER_LABEL = ['ล่าสุด', 'ก่อนหน้า', 'เก่าสุด'];
 
-// แถวบิล: แถบสีประจำสาขาด้านซ้าย · ชื่อสาขา + ลำดับบิลของสาขา + สถานะ · เลขบิล/เวลารับ · ชื่อสินค้า
-function HistoryRow({ bill, branchName, color, order }: { bill: BillDetail; branchName: string; color: string; order: number }) {
+// แถวบิลในตาราง: ลำดับบิลของสาขา · เลขบิล · วันที่/ผู้รับ · จำนวนรายการ (ชี้ดูชื่อสินค้า) · สถานะ
+function HistoryRow({ bill, order }: { bill: BillDetail; order: number }) {
   const hadIssue = bill.issue_status === 'resolved';
   const names = bill.items.map((item) => item.substitution?.product_name ?? item.product_name);
   return (
-    <li className="border-b border-slate-100 last:border-b-0">
-      <Link href={`/admin/stock-request/bills/${bill.id}`} className="flex items-stretch gap-3 transition hover:bg-pink-50/40">
-        <span className={`w-1.5 shrink-0 ${color}`} aria-hidden />
-        <div className="min-w-0 flex-1 py-3">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-black text-slate-800">{branchName}</span>
-            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">บิล{ORDER_LABEL[order] ?? ''}</span>
-            <span className={`ml-auto rounded-full px-2.5 py-0.5 text-[11px] font-black ring-1 ${hadIssue ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
-              {hadIssue ? '🛠️ แก้ไขปัญหาแล้ว' : '✅ ได้รับครบ'}
-            </span>
-          </div>
-          <p className="mt-0.5 text-xs text-slate-500">
-            <span className="font-mono font-bold text-slate-600">{bill.bill_no}</span> · รับ {bill.received_at ? timeFormat.format(new Date(bill.received_at)) : '-'} น.
-            {bill.received_by_name ? ` โดย ${bill.received_by_name}` : ''}
-            {bill.responsible_name ? ` · ผู้รับผิดชอบ ${bill.responsible_name}` : ''}
-          </p>
-          <p className="mt-1 truncate text-xs">
-            <span className="font-bold text-pink-600">📦 {names.length} รายการ</span>
-            {names.length > 0 && (
-              <span className="text-slate-500">
-                {' '}
-                · {names.slice(0, 4).join(', ')}
-                {names.length > 4 ? ` +${names.length - 4}` : ''}
-              </span>
-            )}
-          </p>
-          {hadIssue && bill.issue_resolved_note && <p className="mt-1 truncate text-[11px] text-amber-700">🛠️ {bill.issue_resolved_note}</p>}
-        </div>
-        <span className="flex items-center pr-3 text-lg text-slate-300" aria-hidden>
-          ›
+    <tr className="whitespace-nowrap hover:bg-pink-50/40">
+      <td className="px-4 py-3">
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${order === 0 ? 'bg-pink-500 text-white' : 'bg-pink-50 text-pink-700'}`}>{ORDER_LABEL[order] ?? order + 1}</span>
+      </td>
+      <td className="px-4 py-3 font-mono font-bold">{bill.bill_no}</td>
+      <td className="px-4 py-3 text-xs text-slate-500">
+        {formatDateTime(bill.received_at)}
+        {bill.received_by_name ? ` · ${bill.received_by_name}` : ''}
+      </td>
+      <td className="px-4 py-3 text-center font-bold" title={names.join(', ')}>
+        {names.length}
+      </td>
+      <td className="px-4 py-3">
+        <span
+          title={hadIssue ? bill.issue_resolved_note ?? undefined : undefined}
+          className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${hadIssue ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}
+        >
+          {hadIssue ? '🛠️ แก้ไขปัญหาแล้ว' : '✅ ได้รับครบ'}
         </span>
-      </Link>
-    </li>
+      </td>
+      <td className="px-4 py-3 text-right">
+        <Link href={`/admin/stock-request/bills/${bill.id}`} className="rounded-lg bg-pink-50 px-3 py-1.5 text-xs font-bold text-pink-700 hover:bg-pink-100">
+          เปิดบิล →
+        </Link>
+      </td>
+    </tr>
   );
 }

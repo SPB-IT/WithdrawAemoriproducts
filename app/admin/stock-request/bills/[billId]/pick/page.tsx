@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import CameraCapture from '@/components/stock-request/CameraCapture';
+import PickLinkButton from '@/components/stock-request/PickLinkButton';
 import ShipDialog from '@/components/stock-request/ShipDialog';
 import { ConfirmDialog, ErrorState, Field, InlineError, LoadingState, Modal, PhotoThumb, Spinner, StatusBadge, inputClass, primaryButton, secondaryButton } from '@/components/stock-request/ui';
 import { apiFetch, errorMessage, formatDateTime, formatNumber, uploadPhoto } from '@/lib/stock-request/client';
@@ -147,7 +148,10 @@ export default function PickingChecklistPage() {
             <p className="truncate text-lg font-black">{bill.branch_name}</p>
             <p className="font-mono text-xs text-slate-500">{bill.bill_no}</p>
           </div>
-          <StatusBadge status={bill.status} />
+          <div className="flex flex-col items-end gap-1.5">
+            <StatusBadge status={bill.status} />
+            {pickable && <PickLinkButton billId={bill.id} billNo={bill.bill_no} branchName={bill.branch_name} className="rounded-lg bg-pink-50 px-2.5 py-1 text-xs font-bold text-pink-700 hover:bg-pink-100" />}
+          </div>
         </div>
         <div className="mt-3 flex items-center gap-3">
           <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">

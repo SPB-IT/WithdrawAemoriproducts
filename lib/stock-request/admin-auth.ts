@@ -19,7 +19,8 @@ export async function requireAdminSession() {
 const PROFILE_COLUMNS = 'id, display_name, email, role, is_active';
 let sharedProfile: AdminProfile | null = null;
 
-async function getSharedAdminProfile(): Promise<AdminProfile> {
+/** โปรไฟล์ผู้ดูแลกลาง — ใช้บันทึกการแก้ไขที่มาจากลิงก์หยิบของ (ไม่มี session แอดมิน) */
+export async function getSharedAdminProfile(): Promise<AdminProfile> {
   if (sharedProfile) return sharedProfile;
   const db = getServiceClient();
   const find = () => db.from('admin_profiles').select(PROFILE_COLUMNS).eq('display_name', SR_SHARED_ADMIN_NAME).maybeSingle();

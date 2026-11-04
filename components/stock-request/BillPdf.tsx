@@ -6,6 +6,7 @@ import { saveAs } from 'file-saver';
 import { openPdfBlob } from '@/lib/open-pdf';
 import { STATUS_LABEL } from '@/lib/stock-request/constants';
 import type { BillDetail } from '@/lib/stock-request/types';
+import { removalLog } from './BillParts';
 
 Font.register({
   family: 'THSarabunNew',
@@ -125,7 +126,7 @@ function BillPages({ bill }: { bill: BillDetail }) {
       <Text style={{ marginTop: 6, textAlign: 'right' }}>รวม {items.length} รายการ</Text>
       {removed.length > 0 && (
         <Text style={[styles.muted, { marginTop: 4 }]}>
-          รายการที่สำนักงานใหญ่ไม่ได้จัดส่ง: {removed.map((item) => `${item.product_name} (${item.product_code})`).join(', ')}
+          รายการที่สำนักงานใหญ่ไม่ได้จัดส่ง: {removed.map((item) => `${item.product_name} (${item.product_code}) — ${removalLog(bill, item.id)?.reason || 'ไม่ได้ระบุเหตุผล'}`).join(' · ')}
         </Text>
       )}
 

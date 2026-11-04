@@ -196,3 +196,42 @@ export function IssueBanner({ bill, onResolve }: { bill: BillDetail; onResolve?:
     </section>
   );
 }
+
+/** บันทึกล่าสุดที่นำรายการออกจากบิล (เหตุผล / ใครทำ / เมื่อไร) */
+export function removalLog(bill: Pick<BillDetail, 'audit_logs'>, itemId: string): AuditLogRow | undefined {
+  return bill.audit_logs
+    .filter((log) => log.bill_item_id === itemId && log.action === 'item_remove')
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+}
+
+/** รายการที่สำนักงานใหญ่ไม่ได้จัดส่ง พร้อมเหตุผล — ให้สาขารู้ว่าทำไมของไม่มา */
+export function RemovedItems({ bill }: { bill: BillDetail }) {
+  const removed = bill.items.filter((item) => item.is_removed);
+  if (removed.length === 0) return null;
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      <p className="mb-2 text-sm font-black text-slate-700">📭 สำนักงานใหญ่ไม่ได้จัดส่ง ({removed.length} รายการ)</p>
+      <ul className="space-y-2">
+        {removed.map((item) => {
+          const log = removalLog(bill, item.id);
+          return (
+            <li key={item.id} className="flex gap-3 rounded-xl bg-white p-2.5 ring-1 ring-slate-100">
+              <PhotoThumb url={item.photo_url} alt={item.product_name} className="h-12 w-12" />
+              <div className="min-w-0 text-xs">
+                <p className="text-sm font-bold text-slate-700">
+                  {item.product_name} <span className="font-mono text-xs font-normal text-slate-400">({item.product_code})</span>
+                </p>
+                <p className="mt-0.5 font-bold text-rose-600">เหตุผล: {log?.reason || 'ไม่ได้ระบุ'}</p>
+                {log && (
+                  <p className="text-slate-400">
+                    {formatDateTime(log.created_at)} · {log.admin_name}
+                  </p>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}

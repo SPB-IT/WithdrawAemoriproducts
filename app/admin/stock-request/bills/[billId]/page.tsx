@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AuditList, IssueBanner, StatusTimeline, SubstitutionPair, packingProgress } from '@/components/stock-request/BillParts';
 import CameraCapture from '@/components/stock-request/CameraCapture';
+import PickLinkButton from '@/components/stock-request/PickLinkButton';
 import ShipDialog from '@/components/stock-request/ShipDialog';
 import {
   ConfirmDialog,
@@ -141,6 +142,7 @@ export default function HqBillDetailPage() {
                   📦 แพ็คของ
                 </Link>
               )}
+              {bill.status === 'billed' && <PickLinkButton billId={bill.id} billNo={bill.bill_no} branchName={bill.branch_name} />}
               {bill.status === 'billed' && (
                 // ส่งได้เมื่อแพ็คของเสร็จ (เช็คครบทุกรายการ) เท่านั้น
                 <button
