@@ -167,7 +167,7 @@ export function IssueBanner({ bill, onResolve }: { bill: BillDetail; onResolve?:
       )}
       {open && onResolve && (
         <button type="button" onClick={onResolve} className="mt-3 rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-rose-700">
-          แก้ไขแล้ว / ปิดเรื่อง
+          แก้ไขปัญหา / ยกยอดไปบิลถัดไป
         </button>
       )}
     </section>

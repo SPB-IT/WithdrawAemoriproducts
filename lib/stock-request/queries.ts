@@ -371,3 +371,16 @@ export async function loadBranchHistory(branchId: number, audit: BillDetailOptio
   const extra = ((openIssues.data ?? []) as BillRow[]).filter((bill) => !seen.has(bill.id));
   return loadBillDetails([...recentRows, ...extra], { audit });
 }
+
+/** คัดลอกรูปไปไฟล์ใหม่ของสาขา (ใช้ตอนยกยอดรายการ — บิลเก่าอาจถูกลบพร้อมรูปตามกฎ 3 บิล) · คัดลอกไม่ได้คืน null */
+export async function copyItemPhoto(sourcePath: string | null, branchId: number): Promise<string | null> {
+  if (!sourcePath) return null;
+  const ext = sourcePath.split('.').pop()?.toLowerCase();
+  const target = `${branchId}/${bangkokYearMonth()}/${crypto.randomUUID()}.${ext === 'png' || ext === 'webp' ? ext : 'jpg'}`;
+  const { error } = await getServiceClient().storage.from(SR_BUCKET).copy(sourcePath, target);
+  if (error) {
+    console.error('[stock-request] copy photo failed', error.message);
+    return null;
+  }
+  return target;
+}

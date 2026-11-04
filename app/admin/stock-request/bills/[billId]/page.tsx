@@ -545,17 +545,27 @@ function ReasonConfirm({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
   );
 }
 
-// ปิดเรื่องบิลที่มีปัญหา — ต้องระบุวิธีแก้และชื่อผู้ปิดเรื่อง (แจ้งสาขาอัตโนมัติ)
+type CarryMode = 'same' | 'substitute' | 'none';
+type CarryChoice = { mode: CarryMode; name: string; code: string };
+
+// ปิดเรื่องบิลที่มีปัญหา — เลือกต่อรายการที่ขาด: ยกยอดตัวเดิม / ยกยอดเป็นสินค้าทดแทน / ไม่ยกยอด
+// รายการที่ยกยอดจะถูกเพิ่มเข้าบิลที่เปิดอยู่ของสาขาทันที · ต้องระบุชื่อผู้ปิดเรื่อง (แจ้งสาขาอัตโนมัติ)
 function ResolveIssueDialog({ open, bill, onClose, onDone }: { open: boolean; bill: BillDetail; onClose: () => void; onDone: () => Promise<void> }) {
+  const missing = useMemo(() => bill.items.filter((item) => !item.is_removed && item.received_state === 'missing'), [bill.items]);
+  const [choices, setChoices] = useState<Record<string, CarryChoice>>({});
   const [note, setNote] = useState('');
   const [resolver, setResolver] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const quick = ['จัดส่งของที่ขาดเพิ่มแล้ว', 'ตรวจสอบแล้วส่งครบ', 'ยกเลิกรายการที่ขาด'];
+  const quick = ['จัดส่งของที่ขาดแยกแล้ว', 'ตรวจสอบแล้วส่งครบ', 'ยกเลิกรายการที่ขาด'];
+
+  const setChoice = (itemId: string, patch: Partial<CarryChoice>) =>
+    setChoices((current) => ({ ...current, [itemId]: { ...(current[itemId] ?? { mode: 'same', name: '', code: '' }), ...patch } }));
 
   useEffect(() => {
     if (!open) return;
     const timer = setTimeout(() => {
+      setChoices(Object.fromEntries(missing.map((item) => [item.id, { mode: 'same' as CarryMode, name: '', code: '' }])));
       setNote('');
       setError(null);
       try {
@@ -566,15 +576,29 @@ function ResolveIssueDialog({ open, bill, onClose, onDone }: { open: boolean; bi
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [open]);
+  }, [open, missing]);
+
+  const carry = missing
+    .map((item) => ({ item, choice: choices[item.id] ?? { mode: 'same' as CarryMode, name: '', code: '' } }))
+    .filter(({ choice }) => choice.mode !== 'none');
+  const hasSkipped = missing.length > carry.length;
 
   const confirm = async () => {
-    if (!note.trim()) return setError('กรุณาระบุวิธีแก้/หมายเหตุ');
+    const badSub = carry.find(({ choice }) => choice.mode === 'substitute' && (!choice.name.trim() || !choice.code.trim()));
+    if (badSub) return setError(`กรุณาระบุชื่อและรหัสสินค้าทดแทนของ “${badSub.item.product_name}”`);
+    if ((hasSkipped || carry.length === 0) && !note.trim()) return setError('รายการที่ไม่ยกยอด กรุณาระบุวิธีแก้/หมายเหตุ');
     if (!resolver.trim()) return setError('กรุณาระบุชื่อผู้ปิดเรื่อง');
     setBusy(true);
     setError(null);
     try {
-      await apiFetch(`/admin/stock-request/api/bills/${bill.id}/resolve-issue`, { method: 'POST', json: { note: note.trim(), resolverName: resolver.trim() } });
+      await apiFetch(`/admin/stock-request/api/bills/${bill.id}/resolve-issue`, {
+        method: 'POST',
+        json: {
+          note: note.trim(),
+          resolverName: resolver.trim(),
+          carry: carry.map(({ item, choice }) => ({ itemId: item.id, mode: choice.mode, productName: choice.name.trim(), productCode: choice.code.trim() })),
+        },
+      });
       await onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -583,9 +607,61 @@ function ResolveIssueDialog({ open, bill, onClose, onDone }: { open: boolean; bi
     }
   };
 
+  const modes: { value: CarryMode; label: string }[] = [
+    { value: 'same', label: '↪ ยกยอดตัวเดิม' },
+    { value: 'substitute', label: '🔄 ยกยอดเป็นของทดแทน' },
+    { value: 'none', label: '✕ ไม่ยกยอด' },
+  ];
+
   return (
-    <ConfirmDialog open={open} title="ปิดเรื่องปัญหาบิล" confirmLabel="ปิดเรื่อง" busy={busy} onCancel={onClose} onConfirm={confirm} message={<>บิล <b className="font-mono">{bill.bill_no}</b> · {bill.branch_name}</>}>
-      <div className="space-y-2">
+    <ConfirmDialog
+      open={open}
+      title="แก้ไขปัญหาบิล"
+      confirmLabel={carry.length ? `ยกยอด ${carry.length} รายการ และปิดเรื่อง` : 'ปิดเรื่อง'}
+      busy={busy}
+      onCancel={onClose}
+      onConfirm={confirm}
+      message={<>บิล <b className="font-mono">{bill.bill_no}</b> · {bill.branch_name} — รายการที่ยกยอดจะถูกเพิ่มเข้าบิลรอบถัดไปของสาขาทันที</>}
+    >
+      <div className="space-y-3">
+        {missing.length > 0 && (
+          <ul className="max-h-[45vh] space-y-2 overflow-y-auto pr-1">
+            {missing.map((item) => {
+              const choice = choices[item.id] ?? { mode: 'same', name: '', code: '' };
+              const expected = item.substitution ?? item;
+              return (
+                <li key={item.id} className="rounded-xl border border-rose-100 bg-rose-50/50 p-2.5">
+                  <p className="text-sm font-bold text-slate-800">
+                    {expected.product_name} <span className="font-mono text-xs font-normal text-slate-500">({expected.product_code})</span>
+                  </p>
+                  <p className="text-xs text-rose-600">✗ {item.received_note}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label={`วิธีแก้ ${expected.product_name}`}>
+                    {modes.map((mode) => (
+                      <button
+                        key={mode.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={choice.mode === mode.value}
+                        onClick={() => setChoice(item.id, { mode: mode.value })}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ring-1 transition ${
+                          choice.mode === mode.value ? 'bg-pink-600 text-white ring-pink-600' : 'bg-white text-slate-600 ring-slate-200 hover:ring-pink-300'
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                  {choice.mode === 'substitute' && (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <input value={choice.name} onChange={(event) => setChoice(item.id, { name: event.target.value })} className={inputClass} maxLength={200} placeholder="ชื่อสินค้าทดแทน *" />
+                      <input value={choice.code} onChange={(event) => setChoice(item.id, { code: event.target.value })} className={inputClass} maxLength={100} placeholder="รหัสสินค้าทดแทน *" />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <div className="flex flex-wrap gap-1.5">
           {quick.map((text) => (
             <button key={text} type="button" onClick={() => setNote(text)} className="rounded-full bg-pink-50 px-3 py-1 text-xs font-bold text-pink-700 ring-1 ring-pink-100">
@@ -593,7 +669,13 @@ function ResolveIssueDialog({ open, bill, onClose, onDone }: { open: boolean; bi
             </button>
           ))}
         </div>
-        <textarea value={note} onChange={(event) => setNote(event.target.value)} className={`${inputClass} min-h-20`} maxLength={1000} placeholder="วิธีแก้ / หมายเหตุ (บังคับ) — สาขาจะเห็นข้อความนี้" />
+        <textarea
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          className={`${inputClass} min-h-16`}
+          maxLength={1000}
+          placeholder={hasSkipped || carry.length === 0 ? 'วิธีแก้ / หมายเหตุ (บังคับ เพราะมีรายการที่ไม่ยกยอด)' : 'หมายเหตุเพิ่มเติม (ถ้ามี) — สาขาจะเห็นข้อความนี้'}
+        />
         <input value={resolver} onChange={(event) => setResolver(event.target.value)} className={inputClass} maxLength={100} placeholder="ชื่อผู้ปิดเรื่อง (บังคับ)" />
         <InlineError message={error} />
       </div>

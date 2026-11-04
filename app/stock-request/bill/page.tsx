@@ -164,6 +164,7 @@ function CurrentBill() {
                       คงเหลือหน้าร้าน <span className="font-black text-pink-700">{formatNumber(item.stock_on_hand)}</span>
                     </p>
                     {item.staff_note && <p className="mt-1 text-xs text-slate-600">📝 {item.staff_note}</p>}
+                    {item.source === 'hq' && item.hq_note && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">🏢 {item.hq_note}</p>}
                     <p className="mt-1 text-[11px] text-slate-400">
                       {item.source === 'hq' ? 'สำนักงานใหญ่เพิ่ม' : `โดย ${item.reported_by_name}`} · {formatDateTime(item.created_at)}
                     </p>
