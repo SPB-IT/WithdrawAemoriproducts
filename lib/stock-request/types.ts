@@ -37,6 +37,8 @@ export interface BillRow {
   billed_by: string | null;
   /** ชื่อผู้รับผิดชอบบิล (กรอกตอนตัดบิล) */
   responsible_name: string | null;
+  /** ชื่อผู้จัดส่ง (กรอกตอนยืนยันจัดส่ง) */
+  shipped_name: string | null;
   /** ปัญหาหลังรับของ: open = สาขาแจ้งของไม่ครบ รอแก้ไข · resolved = ผู้ดูแลปิดเรื่องแล้ว */
   issue_status: 'open' | 'resolved' | null;
   issue_summary: string | null;

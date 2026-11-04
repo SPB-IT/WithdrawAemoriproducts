@@ -5,33 +5,56 @@ import { formatDateTime, formatNumber } from '@/lib/stock-request/client';
 import type { AuditLogRow, BillDetail, BillItemDetail, JsonObject } from '@/lib/stock-request/types';
 import { PhotoThumb } from './ui';
 
-/** ไทม์ไลน์สถานะ: รออนุมัติ → ตัดบิล → จัดส่ง → ได้รับ */
+/** ความคืบหน้าการแพ็คของ (จากการติ๊กในหน้าเช็คของ) — done = เช็คครบทุกรายการแล้ว */
+export function packingProgress(bill: BillDetail) {
+  const items = bill.items.filter((item) => !item.is_removed);
+  const picked = items.filter((item) => item.picked_at);
+  const checkers = [...new Set(picked.map((item) => item.picked_by).filter((name): name is string => !!name))];
+  const lastPickedAt = picked.reduce<string | null>((latest, item) => (!latest || (item.picked_at as string) > latest ? item.picked_at : latest), null);
+  return { total: items.length, picked: picked.length, done: items.length > 0 && picked.length === items.length, checkers, lastPickedAt };
+}
+
+/** ไทม์ไลน์สถานะ: รออนุมัติ → ตัดบิล → กำลังแพ็คของ → จัดส่ง → ได้รับ */
 export function StatusTimeline({ bill }: { bill: BillDetail }) {
-  const reached = STATUS_ORDER.indexOf(bill.status);
-  const timeFor = (index: number) =>
-    [bill.created_at, bill.billed_at, bill.shipped_at, bill.received_at][index];
-  const whoFor = (index: number) =>
-    [null, bill.responsible_name ? `ผู้รับผิดชอบ: ${bill.responsible_name}` : bill.billed_by_name, bill.shipped_by_name, bill.received_by_name][index];
+  const packing = packingProgress(bill);
+  const statusIndex = STATUS_ORDER.indexOf(bill.status);
+  // ขั้นแพ็คของไม่ใช่สถานะในฐานข้อมูล — ถือว่าเสร็จเมื่อเช็คของครบ (หรือบิลจัดส่งไปแล้ว)
+  const packed = statusIndex >= 2 || (bill.status === 'billed' && packing.done);
+  const steps = [
+    { label: STATUS_LABEL.pending, done: true, time: bill.created_at, who: null },
+    { label: STATUS_LABEL.billed, done: statusIndex >= 1, time: bill.billed_at, who: bill.responsible_name ? `ผู้รับผิดชอบ: ${bill.responsible_name}` : bill.billed_by_name },
+    {
+      label: packed ? 'แพ็คของเสร็จ' : 'กำลังแพ็คของ',
+      done: packed,
+      active: !packed && bill.status === 'billed',
+      time: packed ? packing.lastPickedAt : null,
+      who: packed ? (packing.checkers.length ? `ผู้เช็ค: ${packing.checkers.join(', ')}` : null) : bill.status === 'billed' ? `เช็คแล้ว ${packing.picked}/${packing.total}` : null,
+    },
+    { label: STATUS_LABEL.shipped, done: statusIndex >= 2, time: bill.shipped_at, who: bill.shipped_name ? `ผู้ส่ง: ${bill.shipped_name}` : bill.shipped_by_name },
+    { label: STATUS_LABEL.received, done: statusIndex >= 3, time: bill.received_at, who: bill.received_by_name },
+  ];
+  const lastDone = steps.reduce((last, step, index) => (step.done ? index : last), 0);
 
   return (
-    <ol className="grid grid-cols-4 gap-1">
-      {STATUS_ORDER.map((status, index) => {
-        const done = index <= reached;
-        return (
-          <li key={status} className="flex flex-col items-center text-center">
-            <div className="flex w-full items-center">
-              <span className={`h-0.5 flex-1 ${index === 0 ? 'bg-transparent' : done ? 'bg-pink-400' : 'bg-slate-200'}`} />
-              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${done ? 'bg-pink-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                {done ? '✓' : index + 1}
-              </span>
-              <span className={`h-0.5 flex-1 ${index === STATUS_ORDER.length - 1 ? 'bg-transparent' : index < reached ? 'bg-pink-400' : 'bg-slate-200'}`} />
-            </div>
-            <span className={`mt-1.5 text-[11px] font-bold leading-tight ${done ? 'text-slate-700' : 'text-slate-400'}`}>{STATUS_LABEL[status]}</span>
-            {done && <span className="mt-0.5 text-[10px] leading-tight text-slate-400">{formatDateTime(timeFor(index))}</span>}
-            {done && whoFor(index) && <span className="text-[10px] leading-tight text-slate-500">{whoFor(index)}</span>}
-          </li>
-        );
-      })}
+    <ol className="grid grid-cols-5 gap-1">
+      {steps.map((step, index) => (
+        <li key={index} className="flex flex-col items-center text-center">
+          <div className="flex w-full items-center">
+            <span className={`h-0.5 flex-1 ${index === 0 ? 'bg-transparent' : step.done || step.active ? 'bg-pink-400' : 'bg-slate-200'}`} />
+            <span
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${
+                step.done ? 'bg-pink-500 text-white' : step.active ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300' : 'bg-slate-100 text-slate-400'
+              }`}
+            >
+              {step.done ? '✓' : step.active ? '📦' : index + 1}
+            </span>
+            <span className={`h-0.5 flex-1 ${index === steps.length - 1 ? 'bg-transparent' : index < lastDone ? 'bg-pink-400' : 'bg-slate-200'}`} />
+          </div>
+          <span className={`mt-1.5 text-[11px] font-bold leading-tight ${step.done ? 'text-slate-700' : step.active ? 'text-amber-700' : 'text-slate-400'}`}>{step.label}</span>
+          {step.done && step.time && <span className="mt-0.5 text-[10px] leading-tight text-slate-400">{formatDateTime(step.time)}</span>}
+          {(step.done || step.active) && step.who && <span className="text-[10px] leading-tight text-slate-500">{step.who}</span>}
+        </li>
+      ))}
     </ol>
   );
 }

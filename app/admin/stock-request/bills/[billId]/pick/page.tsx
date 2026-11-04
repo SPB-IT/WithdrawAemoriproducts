@@ -35,8 +35,6 @@ export default function PickingChecklistPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [confirmShip, setConfirmShip] = useState(false);
-  const [shipping, setShipping] = useState(false);
   const [hidePicked, setHidePicked] = useState(false);
   const [rejecting, setRejecting] = useState<BillItemDetail | null>(null);
   const [substituting, setSubstituting] = useState<BillItemDetail | null>(null);
@@ -104,23 +102,6 @@ export default function PickingChecklistPage() {
       void load();
     } finally {
       setBusyId(null);
-    }
-  };
-
-  const ship = async () => {
-    if (!bill) return;
-    setShipping(true);
-    setActionError(null);
-    try {
-      await apiFetch(`/admin/stock-request/api/bills/${bill.id}/ship`, { method: 'POST', json: { expectedVersion: bill.version } });
-      setConfirmShip(false);
-      await load();
-    } catch (err) {
-      setActionError(errorMessage(err));
-      setConfirmShip(false);
-      void load();
-    } finally {
-      setShipping(false);
     }
   };
 
@@ -354,22 +335,20 @@ export default function PickingChecklistPage() {
       {pickable && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-pink-100 bg-white/95 p-3 backdrop-blur">
           <div className="mx-auto max-w-2xl">
-            <button type="button" disabled={!allPicked} onClick={() => setConfirmShip(true)} className={`${primaryButton} w-full py-3.5 text-base`}>
-              {allPicked ? '🚚 เตรียมครบแล้ว · ยืนยันจัดส่ง' : `เหลืออีก ${items.length - pickedCount} รายการ`}
-            </button>
+            {/* เช็คครบ = แพ็คของเสร็จ (ติ๊กถูกในไทม์ไลน์) · การยืนยันจัดส่งทำที่หน้าบิลแยกต่างหาก */}
+            {allPicked ? (
+              <Link href={`/admin/stock-request/bills/${bill.id}`} className={`${primaryButton} w-full py-3.5 text-base`}>
+                ✅ แพ็คของเสร็จแล้ว · กลับหน้าบิล
+              </Link>
+            ) : (
+              <button type="button" disabled className={`${primaryButton} w-full py-3.5 text-base`}>
+                📦 กำลังแพ็คของ · เหลืออีก {items.length - pickedCount} รายการ
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      <ConfirmDialog
-        open={confirmShip}
-        title="ยืนยันจัดส่งสินค้า"
-        confirmLabel="ยืนยันจัดส่ง"
-        busy={shipping}
-        onCancel={() => setConfirmShip(false)}
-        onConfirm={ship}
-        message={`เปลี่ยนสถานะบิล ${bill.bill_no} เป็น “จัดส่งแล้ว” — สาขาจะได้รับแจ้งเตือนให้ยืนยันเมื่อได้รับสินค้า`}
-      />
     </div>
   );
 }
