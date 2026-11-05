@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/stock-request/admin-auth';
 import { STATUS_ORDER } from '@/lib/stock-request/constants';
 import { fromDbError, handle } from '@/lib/stock-request/errors';
 import { getBranchNameMap, getBranches, processStorageCleanup, signPhotoUrls } from '@/lib/stock-request/queries';
+import { isPartial, sentQty, shortQty, shortfallHandled } from '@/lib/stock-request/qty';
 import { getServiceClient } from '@/lib/stock-request/supabase-admin';
 import type { BillItemRow, BillStatus } from '@/lib/stock-request/types';
 
@@ -10,10 +11,10 @@ export const dynamic = 'force-dynamic';
 
 type PendingBill = { id: string; bill_no: string; branch_id: number; created_at: string; updated_at: string; bill_items: { count: number }[] };
 type LatestItem = BillItemRow & { bills: { bill_no: string; status: BillStatus } | null };
-type StockRow = Pick<BillItemRow, 'id' | 'bill_id' | 'branch_id' | 'product_name' | 'product_code' | 'stock_on_hand' | 'picked_at' | 'received_note'> & {
+type StockRow = Pick<BillItemRow, 'id' | 'bill_id' | 'branch_id' | 'product_name' | 'product_code' | 'stock_on_hand' | 'hq_ship_qty' | 'hq_note' | 'picked_at' | 'received_note'> & {
   bills: { bill_no: string; status: BillStatus } | null;
 };
-const STOCK_COLUMNS = 'id, bill_id, branch_id, product_name, product_code, stock_on_hand, picked_at, received_note, bills!inner(bill_no, status)';
+const STOCK_COLUMNS = 'id, bill_id, branch_id, product_name, product_code, stock_on_hand, hq_ship_qty, hq_note, picked_at, received_note, bills!inner(bill_no, status)';
 
 export const GET = handle(async () => {
   await requireAdmin();
@@ -21,7 +22,7 @@ export const GET = handle(async () => {
 
   const countFor = (status: BillStatus) => db.from('bills').select('id', { count: 'exact', head: true }).eq('status', status);
   // ยิงทุก query พร้อมกัน (ฐานข้อมูลอยู่ไกล ลดจำนวนรอบการรอ)
-  const [counts, pendingResult, latestResult, branches, branchNames, openIssuesResult, reportedResult, packingResult, missingResult, rejectedResult] = await Promise.all([
+  const [counts, pendingResult, latestResult, branches, branchNames, openIssuesResult, reportedResult, packingResult, missingResult, rejectedResult, partialResult] = await Promise.all([
     Promise.all(STATUS_ORDER.map((status) => countFor(status))),
     db
       .from('bills')
@@ -42,12 +43,14 @@ export const GET = handle(async () => {
     db.from('bill_items').select(STOCK_COLUMNS).eq('is_removed', false).eq('bills.status', 'billed').limit(2000),
     db.from('bill_items').select(`${STOCK_COLUMNS.replace('bills!inner(bill_no, status)', 'bills!inner(bill_no, status, issue_status)')}`).eq('received_state', 'missing').eq('bills.issue_status', 'open').limit(200),
     db.from('bill_items').select(STOCK_COLUMNS).eq('is_removed', true).in('bills.status', ['billed', 'shipped']).limit(200),
+    // ของไม่พอ ส่งได้ไม่ครบ (บิลที่ตัดแล้ว) — ค้างจนกว่าแอดมินจะจัดการส่วนที่ขาด
+    db.from('bill_items').select(STOCK_COLUMNS).eq('is_removed', false).not('hq_ship_qty', 'is', null).in('bills.status', ['billed', 'shipped', 'received']).limit(300),
   ]);
 
   for (const result of counts) if (result.error) throw fromDbError(result.error);
   if (pendingResult.error) throw fromDbError(pendingResult.error);
   if (latestResult.error) throw fromDbError(latestResult.error);
-  for (const result of [reportedResult, packingResult, missingResult, rejectedResult]) if (result.error) throw fromDbError(result.error);
+  for (const result of [reportedResult, packingResult, missingResult, rejectedResult, partialResult]) if (result.error) throw fromDbError(result.error);
 
   const statusCounts = Object.fromEntries(STATUS_ORDER.map((status, index) => [status, counts[index].count ?? 0])) as Record<BillStatus, number>;
   const pending = ((pendingResult.data ?? []) as PendingBill[])
@@ -86,9 +89,10 @@ export const GET = handle(async () => {
   const packingRows = (packingResult.data ?? []) as unknown as StockRow[];
   const missingRows = (missingResult.data ?? []) as unknown as StockRow[];
   const rejectedRows = (rejectedResult.data ?? []) as unknown as StockRow[];
+  const partialRows = ((partialResult.data ?? []) as unknown as StockRow[]).filter((row) => isPartial(row) && !shortfallHandled(row)); // จัดการส่วนที่ขาดแล้ว ไม่ต้องค้าง
   const nameOf = (branchId: number) => branchNames.get(branchId) ?? `สาขา ${branchId}`;
 
-  // สินค้าที่สาขาแจ้งรอบนี้ รวมตามรหัสสินค้า — หลายสาขาแจ้ง/คงเหลือน้อยขึ้นก่อน
+  // สินค้าที่สาขาแจ้งรอบนี้ รวมตามรหัสสินค้า — หลายสาขาสั่ง/สั่งรวมมากขึ้นก่อน
   const byProduct = new Map<string, { product_code: string; product_name: string; branches: { name: string; stock: number | null }[] }>();
   for (const row of reported) {
     const key = row.product_code.trim().toUpperCase();
@@ -97,10 +101,10 @@ export const GET = handle(async () => {
     byProduct.set(key, entry);
   }
   const topProducts = [...byProduct.values()]
-    .map((entry) => ({ ...entry, min_stock: Math.min(...entry.branches.map((branch) => branch.stock ?? Number.MAX_SAFE_INTEGER)) }))
-    .sort((a, b) => b.branches.length - a.branches.length || a.min_stock - b.min_stock)
+    .map((entry) => ({ ...entry, total_qty: entry.branches.reduce((sum, branch) => sum + (branch.stock ?? 0), 0) }))
+    .sort((a, b) => b.branches.length - a.branches.length || b.total_qty - a.total_qty)
     .slice(0, 10)
-    .map((entry) => ({ ...entry, min_stock: entry.min_stock === Number.MAX_SAFE_INTEGER ? null : entry.min_stock }));
+
 
   const unpicked = packingRows.filter((row) => !row.picked_at);
   // ของขาด = สาขาแจ้งว่าไม่ได้รับ (ปัญหายังไม่ปิด) + ของที่ผู้แพ็คของกดว่าไม่มีของส่ง (บิลรอบนี้)
@@ -111,13 +115,14 @@ export const GET = handle(async () => {
   }
   const shortages = [
     ...missingRows.map((row) => ({ kind: 'missing' as const, id: row.id, bill_id: row.bill_id, bill_no: row.bills?.bill_no ?? '-', branch_name: nameOf(row.branch_id), product_name: row.product_name, product_code: row.product_code, note: row.received_note })),
+    ...partialRows.map((row) => ({ kind: 'partial' as const, id: row.id, bill_id: row.bill_id, bill_no: row.bills?.bill_no ?? '-', branch_name: nameOf(row.branch_id), product_name: row.product_name, product_code: row.product_code, note: `ส่งได้ ${sentQty(row)}/${row.stock_on_hand} ชิ้น · ขาด ${shortQty(row)}` })),
     ...rejectedRows.map((row) => ({ kind: 'no_stock' as const, id: row.id, bill_id: row.bill_id, bill_no: row.bills?.bill_no ?? '-', branch_name: nameOf(row.branch_id), product_name: row.product_name, product_code: row.product_code, note: removeReasons.get(row.id) ?? null })),
   ];
 
   const stock = {
     reportedItems: reported.length,
     reportedBranches: new Set(reported.map((row) => row.branch_id)).size,
-    outAtBranch: reported.filter((row) => row.stock_on_hand === 0).length,
+    orderedQty: reported.reduce((sum, row) => sum + (row.stock_on_hand ?? 0), 0),
     toPack: unpicked.length,
     toPackBills: new Set(unpicked.map((row) => row.bill_id)).size,
     packedBillsReady: [...new Set(packingRows.map((row) => row.bill_id))].filter((billId) => !unpicked.some((row) => row.bill_id === billId)).length,

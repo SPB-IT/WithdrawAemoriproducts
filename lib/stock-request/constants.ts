@@ -44,7 +44,7 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
 export const FIELD_LABEL: Record<string, string> = {
   product_name: 'ชื่อสินค้า',
   product_code: 'รหัสสินค้า',
-  stock_on_hand: 'คงเหลือหน้าร้าน',
+  stock_on_hand: 'จำนวนที่สั่ง',
   hq_ship_qty: 'จำนวนจัดส่ง',
   hq_note: 'หมายเหตุ HQ',
   staff_note: 'หมายเหตุสาขา',

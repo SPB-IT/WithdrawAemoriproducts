@@ -83,7 +83,7 @@ export default function BranchHistoryPage() {
                       <div className="min-w-0 text-xs">
                         <p className="font-bold text-slate-800">{item.substitution ? `${item.substitution.product_name} (แทน ${item.product_name})` : item.product_name}</p>
                         <p className="text-slate-500">
-                          รหัส {item.substitution?.product_code ?? item.product_code} · คงเหลือที่สาขา {formatNumber(item.stock_on_hand)}
+                          รหัส {item.substitution?.product_code ?? item.product_code} · สั่ง {formatNumber(item.stock_on_hand)} ชิ้น
                         </p>
                         {item.received_state === 'ok' && <p className="font-bold text-emerald-700">✓ สาขาได้รับแล้ว</p>}
                         {item.received_state === 'missing' && <p className="font-bold text-rose-600">✗ ไม่ได้รับ/ไม่ครบ: {item.received_note}</p>}

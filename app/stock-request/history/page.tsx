@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AuditList, IssueBadge, IssueBanner, RemovedItems, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
+import { AuditList, IssueBadge, IssueBanner, QtyLine, RemovedItems, StatusTimeline, SubstitutionPair } from '@/components/stock-request/BillParts';
 import BranchShell from '@/components/stock-request/BranchShell';
 import { EmptyState, ErrorState, LoadingState, PhotoThumb, StatusBadge, primaryButton, secondaryButton } from '@/components/stock-request/ui';
-import { apiFetch, errorMessage, formatDateTime, formatNumber } from '@/lib/stock-request/client';
+import { apiFetch, errorMessage, formatDateTime } from '@/lib/stock-request/client';
 import type { BillDetail } from '@/lib/stock-request/types';
 
 export default function HistoryPage() {
@@ -100,11 +100,7 @@ function HistoryBill({ bill }: { bill: BillDetail }) {
                   <div className="min-w-0 flex-1 text-sm">
                     <p className="font-bold text-slate-800">{item.product_name}</p>
                     <p className="text-xs text-slate-500">รหัส {item.product_code}</p>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
-                      <span>
-                        คงเหลือที่แจ้ง <b>{formatNumber(item.stock_on_hand)}</b>
-                      </span>
-                    </div>
+                    <QtyLine bill={bill} item={item} />
                     {item.staff_note && <p className="mt-1 text-xs text-slate-500">📝 {item.staff_note}</p>}
                     {item.hq_note && <p className="mt-1 text-xs text-sky-700">💬 HQ: {item.hq_note}</p>}
                     <p className="mt-1 text-[11px] text-slate-400">{item.source === 'hq' ? 'สำนักงานใหญ่เพิ่ม' : `โดย ${item.reported_by_name}`}</p>

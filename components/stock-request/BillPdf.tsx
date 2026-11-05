@@ -6,7 +6,11 @@ import { saveAs } from 'file-saver';
 import { openPdfBlob } from '@/lib/open-pdf';
 import { STATUS_LABEL } from '@/lib/stock-request/constants';
 import type { BillDetail } from '@/lib/stock-request/types';
+import { isPartial, sentQty } from '@/lib/stock-request/qty';
 import { removalLog } from './BillParts';
+
+// จำนวนในเอกสาร: ปกติ = จำนวนที่สั่ง · ของไม่พอ = ส่งได้/สั่ง
+const qtyText = (item: BillDetail['items'][number]) => (isPartial(item) ? `${sentQty(item)}/${item.stock_on_hand}` : String(item.stock_on_hand ?? '-'));
 
 Font.register({
   family: 'THSarabunNew',
@@ -95,7 +99,7 @@ function BillPages({ bill }: { bill: BillDetail }) {
         <Text style={styles.cellNo}>#</Text>
         <Text style={styles.cellPhoto}>รูป</Text>
         <Text style={styles.cellName}>สินค้า / รหัส</Text>
-        <Text style={styles.cellNum}>คงเหลือ</Text>
+        <Text style={styles.cellNum}>สั่ง</Text>
         <Text style={styles.cellNote}>หมายเหตุ</Text>
         {showReceive && <Text style={styles.cellReceive}>ผลรับของ (สาขา)</Text>}
       </View>
@@ -112,7 +116,7 @@ function BillPages({ bill }: { bill: BillDetail }) {
               </Text>
             )}
           </View>
-          <Text style={styles.cellNum}>{item.stock_on_hand ?? '-'}</Text>
+          <Text style={styles.cellNum}>{qtyText(item)}</Text>
           <Text style={styles.cellNote}>{[item.staff_note, item.hq_note ? `HQ: ${item.hq_note}` : null].filter(Boolean).join(' / ') || '-'}</Text>
           {showReceive && (
             <Text style={[styles.cellReceive, item.received_state === 'missing' ? { color: '#be123c', fontWeight: 'bold' } : item.received_state === 'ok' ? { color: '#047857' } : { color: '#94a3b8' }]}>
@@ -124,6 +128,11 @@ function BillPages({ bill }: { bill: BillDetail }) {
         </View>
       ))}
       <Text style={{ marginTop: 6, textAlign: 'right' }}>รวม {items.length} รายการ</Text>
+      {items.some(isPartial) && (
+        <Text style={[styles.muted, { marginTop: 4 }]}>
+          ของไม่พอ ส่งได้ไม่ครบ (ส่งได้/สั่ง): {items.filter(isPartial).map((item) => `${item.product_name} ${sentQty(item)}/${item.stock_on_hand}`).join(' · ')}
+        </Text>
+      )}
       {removed.length > 0 && (
         <Text style={[styles.muted, { marginTop: 4 }]}>
           รายการที่สำนักงานใหญ่ไม่ได้จัดส่ง: {removed.map((item) => `${item.product_name} (${item.product_code}) — ${removalLog(bill, item.id)?.reason || 'ไม่ได้ระบุเหตุผล'}`).join(' · ')}
@@ -156,7 +165,7 @@ export async function exportBillsPdf(bills: BillDetail[], filename: string) {
   saveAs(blob, `${filename}.pdf`);
 }
 
-/** ใบจัดสินค้า A4 (สำนักงานใหญ่) — เอกสาร PDF: ช่องติ๊กตรวจ รูป ชื่อ/รหัส คงเหลือที่สาขา หมายเหตุ ช่องลงชื่อ */
+/** ใบจัดสินค้า A4 (สำนักงานใหญ่) — เอกสาร PDF: ช่องติ๊กตรวจ รูป ชื่อ/รหัส จำนวนที่สาขาสั่ง หมายเหตุ ช่องลงชื่อ */
 function PickingSheetPage({ bill }: { bill: BillDetail }) {
   const items = bill.items.filter((item) => !item.is_removed);
   return (
@@ -184,7 +193,7 @@ function PickingSheetPage({ bill }: { bill: BillDetail }) {
         <Text style={styles.cellPhoto}>รูป</Text>
         <Text style={styles.cellName}>ชื่อสินค้า</Text>
         <Text style={styles.cellCode}>รหัสสินค้า</Text>
-        <Text style={styles.cellNum}>คงเหลือสาขา</Text>
+        <Text style={styles.cellNum}>จำนวนที่สั่ง</Text>
         <Text style={styles.cellNote}>หมายเหตุ</Text>
       </View>
       {items.map((item, index) => {
@@ -206,7 +215,7 @@ function PickingSheetPage({ bill }: { bill: BillDetail }) {
               )}
             </View>
             <Text style={styles.cellCode}>{sub ? sub.product_code : item.product_code}</Text>
-            <Text style={styles.cellNum}>{item.stock_on_hand ?? '-'}</Text>
+            <Text style={styles.cellNum}>{qtyText(item)}</Text>
             <Text style={styles.cellNote}>
               {[sub ? `เหตุผลทดแทน: ${sub.reason}` : null, item.hq_note, item.staff_note ? `สาขา: ${item.staff_note}` : null].filter(Boolean).join(' / ') || '-'}
             </Text>

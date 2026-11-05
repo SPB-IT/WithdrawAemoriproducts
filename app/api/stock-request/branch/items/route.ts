@@ -3,7 +3,7 @@ import { requireBranchContext } from '@/lib/stock-request/branch-context';
 import { ApiError, handle } from '@/lib/stock-request/errors';
 import { assertPhotoUploaded, logBranchAction, pickItemFields, rpc } from '@/lib/stock-request/queries';
 import type { BillItemRow } from '@/lib/stock-request/types';
-import { optionalText, readJson, requireInt, requireText, requireUuid } from '@/lib/stock-request/validation';
+import { optionalText, readJson, requireOrderQty, requireText, requireUuid } from '@/lib/stock-request/validation';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +22,7 @@ export const POST = handle(async (request: NextRequest) => {
     p_item_id: requireUuid(body.itemId, 'รหัสรายการ'),
     p_product_name: requireText(body.productName, 200, 'ชื่อสินค้า'),
     p_product_code: requireText(body.productCode, 100, 'รหัสสินค้า'),
-    p_stock_on_hand: requireInt(body.stockOnHand, 'จำนวนคงเหลือ'),
+    p_stock_on_hand: requireOrderQty(body.stockOnHand), // ช่อง stock_on_hand = จำนวนที่สาขาต้องการสั่ง
     p_staff_note: optionalText(body.staffNote, 1000),
     p_photo_path: photoPath,
     p_staff_name: staffName,

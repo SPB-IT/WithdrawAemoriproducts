@@ -6,7 +6,7 @@ import CameraCapture from '@/components/stock-request/CameraCapture';
 import { ErrorState, InlineError, LoadingState, PhotoThumb, Spinner } from '@/components/stock-request/ui';
 import { apiFetch, errorMessage, formatDateTime, formatNumber, uploadPhoto } from '@/lib/stock-request/client';
 
-type PickState = 'picked' | 'missing' | 'substitute';
+type PickState = 'picked' | 'partial' | 'missing' | 'substitute';
 
 interface PickItem {
   id: string;
@@ -14,6 +14,7 @@ interface PickItem {
   product_code: string;
   replaced: string | null;
   stock_on_hand: number | null;
+  sent_qty: number | null;
   photo_url: string | null;
   state: PickState | null;
   note: string | null;
@@ -28,14 +29,15 @@ interface PickData {
   last_saved_by: string | null;
 }
 
-type Choice = { state: PickState | null; note: string; subName: string; subCode: string; photo: Blob | null };
-const EMPTY_CHOICE: Choice = { state: null, note: '', subName: '', subCode: '', photo: null };
+type Choice = { state: PickState | null; note: string; qty: string; subName: string; subCode: string; photo: Blob | null };
+const EMPTY_CHOICE: Choice = { state: null, note: '', qty: '', subName: '', subCode: '', photo: null };
 
 const NAME_KEY = 'sr_picker_names'; // ชื่อเดียวกับหน้าแพ็คของของแอดมิน
 const MISSING_REASONS = ['ของหมด', 'หาไม่เจอ', 'ของเสีย/ชำรุด'];
 const SUBSTITUTE_REASONS = ['ของหมด ใช้รุ่นใกล้เคียง', 'ใช้สีหรือลายอื่น', 'ใช้ขนาดอื่น'];
+const PARTIAL_REASONS = ['ของในคลังไม่พอ', 'ของเสียบางส่วน', 'รอของเข้าเพิ่ม'];
 
-// หน้าลิงก์หยิบของ (เปิดจากลิงก์ที่แอดมินส่งให้ ไม่ต้องเข้าระบบ): เดินหยิบของ → กด ✓ หยิบได้ / 🔄 ใช้ของแทน / ✗ ไม่มี → บันทึก
+// หน้าลิงก์หยิบของ (เปิดจากลิงก์ที่แอดมินส่งให้ ไม่ต้องเข้าระบบ): เดินหยิบของ → กด ✓ หยิบได้ครบ / ⚠️ ได้ไม่ครบ / 🔄 ใช้ของแทน / ✗ ไม่มี → บันทึก
 export default function PickLinkPage() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<PickData | null>(null);
@@ -51,7 +53,7 @@ export default function PickLinkPage() {
     try {
       const result = await apiFetch<PickData>(`/api/pick/${encodeURIComponent(token)}`);
       setData(result);
-      setChoices(Object.fromEntries(result.items.map((item) => [item.id, { ...EMPTY_CHOICE, state: item.state, note: item.note ?? '' }])));
+      setChoices(Object.fromEntries(result.items.map((item) => [item.id, { ...EMPTY_CHOICE, state: item.state, note: item.note ?? '', qty: item.sent_qty !== null ? String(item.sent_qty) : '' }])));
       setLoadError(null);
     } catch (err) {
       setLoadError(errorMessage(err));
@@ -80,6 +82,7 @@ export default function PickLinkPage() {
         const choice = choices[item.id];
         if (!choice?.state) return false;
         if (choice.state === 'substitute') return true; // ใช้ของแทน = บันทึกใหม่ทุกครั้ง
+        if (choice.state === 'partial') return choice.state !== item.state || choice.qty !== String(item.sent_qty ?? '') || choice.note.trim() !== (item.note ?? '');
         return choice.state !== item.state || (choice.state === 'missing' && choice.note.trim() !== (item.note ?? ''));
       }),
     [data, choices],
@@ -97,11 +100,15 @@ export default function PickLinkPage() {
   const counts = data.items.reduce(
     (sum, item) => {
       const state = choices[item.id]?.state;
-      return { picked: sum.picked + (state === 'picked' || state === 'substitute' ? 1 : 0), missing: sum.missing + (state === 'missing' ? 1 : 0) };
+      return {
+        picked: sum.picked + (state === 'picked' || state === 'substitute' ? 1 : 0),
+        partial: sum.partial + (state === 'partial' ? 1 : 0),
+        missing: sum.missing + (state === 'missing' ? 1 : 0),
+      };
     },
-    { picked: 0, missing: 0 },
+    { picked: 0, partial: 0, missing: 0 },
   );
-  const pending = data.items.length - counts.picked - counts.missing;
+  const pending = data.items.length - counts.picked - counts.partial - counts.missing;
 
   const setChoice = (itemId: string, patch: Partial<Choice>) => {
     setSaved(null);
@@ -118,6 +125,13 @@ export default function PickLinkPage() {
       return choice?.state === 'substitute' && (!choice.subName.trim() || !choice.subCode.trim() || !choice.note.trim());
     });
     if (badSub) return setError(`กรุณาใส่ชื่อ รหัส และเหตุผลของสินค้าที่ใช้แทน “${badSub.product_name}”`);
+    const badPartial = changes.find((item) => {
+      const choice = choices[item.id];
+      const qty = Number(choice?.qty);
+      return choice?.state === 'partial' && (!choice.qty || qty < 1 || qty >= (item.stock_on_hand ?? 0) || !choice.note.trim());
+    });
+    if (badPartial)
+      return setError(`“${badPartial.product_name}” ใส่จำนวนที่หยิบได้ (1 ถึง ${(badPartial.stock_on_hand ?? 1) - 1} ชิ้น) และเหตุผลที่ได้ไม่ครบ`);
     setSaving(true);
     setError(null);
     try {
@@ -131,13 +145,21 @@ export default function PickLinkPage() {
       for (const item of changes) {
         const choice = choices[item.id];
         const photoPath = choice.state === 'substitute' && choice.photo ? await uploadPhoto(`/api/pick/${encodeURIComponent(token)}/upload-url`, choice.photo) : null;
-        items.push({ itemId: item.id, state: choice.state, note: choice.note.trim(), productName: choice.subName.trim(), productCode: choice.subCode.trim(), photoPath });
+        items.push({
+          itemId: item.id,
+          state: choice.state,
+          note: choice.note.trim(),
+          qty: choice.state === 'partial' ? Number(choice.qty) : null,
+          productName: choice.subName.trim(),
+          productCode: choice.subCode.trim(),
+          photoPath,
+        });
       }
-      const result = await apiFetch<{ picked: number; missing: number; substituted: number }>(`/api/pick/${encodeURIComponent(token)}`, {
+      const result = await apiFetch<{ picked: number; partial: number; missing: number; substituted: number }>(`/api/pick/${encodeURIComponent(token)}`, {
         method: 'POST',
         json: { pickerName: picker, items },
       });
-      setSaved(`บันทึกแล้ว · หยิบได้ ${result.picked} · ใช้ของแทน ${result.substituted} · ไม่มี ${result.missing} รายการ`);
+      setSaved(`บันทึกแล้ว · หยิบได้ครบ ${result.picked} · ได้ไม่ครบ ${result.partial} · ใช้ของแทน ${result.substituted} · ไม่มี ${result.missing} รายการ`);
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -181,10 +203,14 @@ export default function PickLinkPage() {
             ))}
           </div>
         )}
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
           <div className="rounded-xl bg-emerald-50 py-2">
             <p className="text-lg font-black text-emerald-700">{counts.picked}</p>
-            <p className="text-[11px] font-bold text-emerald-700">หยิบได้</p>
+            <p className="text-[11px] font-bold text-emerald-700">หยิบได้ครบ</p>
+          </div>
+          <div className="rounded-xl bg-amber-50 py-2">
+            <p className="text-lg font-black text-amber-700">{counts.partial}</p>
+            <p className="text-[11px] font-bold text-amber-700">ได้ไม่ครบ</p>
           </div>
           <div className="rounded-xl bg-rose-50 py-2">
             <p className="text-lg font-black text-rose-600">{counts.missing}</p>
@@ -210,50 +236,123 @@ export default function PickLinkPage() {
           const choice = choices[item.id] ?? EMPTY_CHOICE;
           const tone =
             choice.state === 'picked'
-              ? 'border-emerald-300 bg-emerald-50/60'
-              : choice.state === 'substitute'
-                ? 'border-sky-300 bg-sky-50/60'
-                : choice.state === 'missing'
-                  ? 'border-rose-300 bg-rose-50/60'
-                  : 'border-pink-100 bg-white';
+              ? 'border-emerald-300'
+              : choice.state === 'partial'
+                ? 'border-amber-300'
+                : choice.state === 'substitute'
+                  ? 'border-sky-300'
+                  : choice.state === 'missing'
+                    ? 'border-rose-300'
+                    : 'border-transparent';
           return (
-            <li key={item.id} className={`rounded-2xl border p-3 shadow-sm transition ${tone}`}>
-              <div className="flex gap-3">
-                <PhotoThumb url={item.photo_url} alt={item.product_name} className="h-20 w-20" />
+            <li key={item.id} className={`rounded-3xl border-2 bg-white p-3.5 shadow-sm transition ${tone}`}>
+              <div className="flex items-center gap-3">
+                <PhotoThumb url={item.photo_url} alt={item.product_name} className="h-16 w-16" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-bold text-slate-400">#{index + 1}</p>
+                  <p className="text-[11px] font-bold text-slate-400">รายการที่ {index + 1}</p>
                   <p className="text-base font-black leading-snug text-slate-800">{item.product_name}</p>
-                  <p className="font-mono text-xs text-slate-500">{item.product_code}</p>
-                  {item.replaced && <p className="text-[11px] text-sky-700">ใช้แทน {item.replaced}</p>}
-                  <p className="text-[11px] text-slate-500">สาขาเหลือ {formatNumber(item.stock_on_hand)}</p>
+                  <p className="font-mono text-xs text-slate-400">{item.product_code}</p>
+                  {item.replaced && <p className="text-[11px] font-bold text-sky-700">ใช้แทน {item.replaced}</p>}
+                </div>
+                <div className="flex shrink-0 flex-col items-center rounded-2xl bg-pink-50 px-3 py-1.5 text-pink-700">
+                  <span className="text-[10px] font-bold">ต้องหยิบ</span>
+                  <span className="text-2xl font-black leading-none">{formatNumber(item.stock_on_hand)}</span>
+                  <span className="text-[10px] font-bold">ชิ้น</span>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-1.5">
-                <button
-                  type="button"
-                  aria-pressed={choice.state === 'picked'}
-                  onClick={() => setChoice(item.id, { state: choice.state === 'picked' ? null : 'picked' })}
-                  className={`rounded-xl py-3 text-sm font-black transition ${choice.state === 'picked' ? 'bg-emerald-500 text-white shadow' : 'bg-white text-emerald-700 ring-1 ring-emerald-200'}`}
-                >
-                  ✓ หยิบได้
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={choice.state === 'substitute'}
-                  onClick={() => setChoice(item.id, { state: choice.state === 'substitute' ? null : 'substitute', note: choice.state === 'substitute' ? choice.note : '' })}
-                  className={`rounded-xl py-3 text-sm font-black transition ${choice.state === 'substitute' ? 'bg-sky-500 text-white shadow' : 'bg-white text-sky-700 ring-1 ring-sky-200'}`}
-                >
-                  🔄 ใช้ของแทน
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={choice.state === 'missing'}
-                  onClick={() => setChoice(item.id, { state: choice.state === 'missing' ? null : 'missing' })}
-                  className={`rounded-xl py-3 text-sm font-black transition ${choice.state === 'missing' ? 'bg-rose-500 text-white shadow' : 'bg-white text-rose-600 ring-1 ring-rose-200'}`}
-                >
-                  ✗ ไม่มี
-                </button>
+
+              {/* ปุ่มหลัก: ส่วนใหญ่หยิบได้ครบ แตะครั้งเดียว */}
+              <button
+                type="button"
+                aria-pressed={choice.state === 'picked'}
+                onClick={() => setChoice(item.id, { state: choice.state === 'picked' ? null : 'picked' })}
+                className={`mt-3 w-full rounded-2xl py-3.5 text-base font-black transition ${
+                  choice.state === 'picked' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 active:bg-emerald-100'
+                }`}
+              >
+                {choice.state === 'picked' ? '✓ หยิบครบแล้ว' : `✓ หยิบครบ ${formatNumber(item.stock_on_hand)} ชิ้น`}
+              </button>
+
+              {/* กรณีอื่น: ปุ่มเล็ก */}
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { state: 'partial', label: 'ได้ไม่ครบ', on: 'bg-amber-500 text-white', off: 'text-amber-700 ring-amber-200', disabled: (item.stock_on_hand ?? 0) < 2 },
+                    { state: 'substitute', label: 'ใช้ของแทน', on: 'bg-sky-500 text-white', off: 'text-sky-700 ring-sky-200', disabled: false },
+                    { state: 'missing', label: 'ไม่มีของ', on: 'bg-rose-500 text-white', off: 'text-rose-600 ring-rose-200', disabled: false },
+                  ] as const
+                ).map((option) => {
+                  const active = choice.state === option.state;
+                  return (
+                    <button
+                      key={option.state}
+                      type="button"
+                      aria-pressed={active}
+                      disabled={option.disabled}
+                      onClick={() =>
+                        setChoice(item.id, {
+                          state: active ? null : option.state,
+                          note: active ? choice.note : item.state === option.state ? item.note ?? '' : '',
+                          qty: option.state === 'partial' && !choice.qty ? String(Math.max(1, (item.stock_on_hand ?? 2) - 1)) : choice.qty,
+                        })
+                      }
+                      className={`rounded-xl py-2 text-xs font-bold transition disabled:opacity-30 ${active ? `${option.on} shadow` : `bg-white ring-1 ${option.off}`}`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
               </div>
+              {choice.state === 'partial' && (
+                <div className="mt-2 space-y-1.5 rounded-xl bg-white p-2.5 ring-1 ring-amber-200">
+                  <p className="text-center text-xs font-black text-amber-700">ของไม่พอ หยิบได้จริงกี่ชิ้น</p>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      aria-label="ลดจำนวน"
+                      disabled={Number(choice.qty) <= 1}
+                      onClick={() => setChoice(item.id, { qty: String(Math.max(1, Number(choice.qty) - 1)) })}
+                      className="h-11 w-11 rounded-full bg-amber-100 text-xl font-black text-amber-800 disabled:opacity-30"
+                    >
+                      −
+                    </button>
+                    <input
+                      value={choice.qty}
+                      onChange={(event) => setChoice(item.id, { qty: event.target.value.replace(/[^0-9]/g, '') })}
+                      inputMode="numeric"
+                      aria-label={`จำนวนที่หยิบได้ของ ${item.product_name}`}
+                      className="w-16 rounded-xl border border-amber-200 bg-white py-2 text-center text-2xl font-black text-amber-800 outline-none focus:border-amber-400"
+                    />
+                    <button
+                      type="button"
+                      aria-label="เพิ่มจำนวน"
+                      disabled={Number(choice.qty) >= (item.stock_on_hand ?? 0) - 1}
+                      onClick={() => setChoice(item.id, { qty: String(Math.min((item.stock_on_hand ?? 2) - 1, Number(choice.qty) + 1)) })}
+                      className="h-11 w-11 rounded-full bg-amber-100 text-xl font-black text-amber-800 disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <p className="text-center text-xs font-bold text-amber-700">
+                    หยิบได้ {choice.qty || 0} จาก {formatNumber(item.stock_on_hand)} ชิ้น
+                    {choice.qty && Number(choice.qty) < (item.stock_on_hand ?? 0) ? ` · ขาด ${(item.stock_on_hand ?? 0) - Number(choice.qty)}` : ''}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PARTIAL_REASONS.map((reason) => (
+                      <button key={reason} type="button" onClick={() => setChoice(item.id, { note: reason })} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    value={choice.note}
+                    onChange={(event) => setChoice(item.id, { note: event.target.value })}
+                    maxLength={300}
+                    placeholder="เหตุผลที่ได้ไม่ครบ (บังคับ)"
+                    className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400"
+                  />
+                </div>
+              )}
               {choice.state === 'substitute' && (
                 <div className="mt-2 space-y-1.5 rounded-xl bg-white p-2.5 ring-1 ring-sky-200">
                   <p className="text-xs font-black text-sky-700">สินค้าที่หยิบไปแทน</p>

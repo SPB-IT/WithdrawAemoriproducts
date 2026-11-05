@@ -26,7 +26,7 @@ function saveResponsible(name: string) {
   }
 }
 
-// หน้าตรวจสอบก่อนตัดบิล: สินค้า+รูป, คงเหลือ, สินค้าทดแทน, หมายเหตุ → ระบุผู้รับผิดชอบบิล → ยืนยันตัดบิล
+// หน้าตรวจสอบก่อนตัดบิล: สินค้า+รูป, จำนวนที่สั่ง, สินค้าทดแทน, หมายเหตุ → ระบุผู้รับผิดชอบบิล → ยืนยันตัดบิล
 export default function ReviewBillPage() {
   const { billId } = useParams<{ billId: string }>();
   const router = useRouter();
@@ -153,7 +153,7 @@ export default function ReviewBillPage() {
                 <th className="px-3 py-3">#</th>
                 <th className="px-3 py-3">รูป</th>
                 <th className="px-3 py-3">สินค้า</th>
-                <th className="px-3 py-3 text-center">คงเหลือ (สาขา)</th>
+                <th className="px-3 py-3 text-center">จำนวนที่สั่ง</th>
                 <th className="px-3 py-3">สินค้าทดแทน</th>
                 <th className="px-3 py-3">หมายเหตุ</th>
               </tr>
@@ -236,7 +236,7 @@ export default function ReviewBillPage() {
         </div>
         <label className="flex items-start gap-3 text-sm font-semibold">
           <input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} className="mt-0.5 h-5 w-5 accent-pink-600" />
-          ตรวจสอบสินค้า รูปภาพ จำนวนคงเหลือ สินค้าทดแทน และหมายเหตุครบถ้วนแล้ว
+          ตรวจสอบสินค้า รูปภาพ จำนวนที่สั่ง สินค้าทดแทน และหมายเหตุครบถ้วนแล้ว
         </label>
         <div className="flex flex-wrap justify-end gap-2">
           <Link href={`/admin/stock-request/bills/${bill.id}`} className={secondaryButton}>

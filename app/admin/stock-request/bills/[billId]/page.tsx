@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { AuditList, IssueBanner, StatusTimeline, SubstitutionPair, packingProgress } from '@/components/stock-request/BillParts';
+import { AuditList, IssueBanner, QtyLine, StatusTimeline, SubstitutionPair, packingProgress } from '@/components/stock-request/BillParts';
 import CameraCapture from '@/components/stock-request/CameraCapture';
 import PickLinkButton from '@/components/stock-request/PickLinkButton';
+import { isPartial, shortQty, shortfallHandled } from '@/lib/stock-request/qty';
 import ShipDialog from '@/components/stock-request/ShipDialog';
 import {
   ConfirmDialog,
@@ -203,7 +204,7 @@ export default function HqBillDetailPage() {
         ) : (
           <ul className="space-y-3">
             {active.map((item, index) => (
-              <ItemRow key={item.id} index={index} item={item} bill={bill} onAction={setDialog} />
+              <ItemRow key={item.id} index={index} item={item} bill={bill} onAction={setDialog} onNotice={(text) => setNotice({ tone: 'ok', text })} />
             ))}
           </ul>
         )}
@@ -257,7 +258,7 @@ export default function HqBillDetailPage() {
 
 type Mutate = (url: string, method: string, json: Record<string, unknown>, success: string) => Promise<void>;
 
-function ItemRow({ item, index, bill, onAction }: { item: BillItemDetail; index: number; bill: BillDetail; onAction: (dialog: Dialog) => void }) {
+function ItemRow({ item, index, bill, onAction, onNotice }: { item: BillItemDetail; index: number; bill: BillDetail; onAction: (dialog: Dialog) => void; onNotice: (text: string) => void }) {
   const pending = bill.status === 'pending';
 
   return (
@@ -269,9 +270,8 @@ function ItemRow({ item, index, bill, onAction }: { item: BillItemDetail; index:
           <div className="min-w-0 flex-1 text-sm">
             <p className="text-base font-bold text-slate-800">{item.product_name}</p>
             <p className="text-xs text-slate-500">รหัส {item.product_code}</p>
-            <p className="mt-1">
-              คงเหลือหน้าร้าน (สาขาระบุ): <b className="text-pink-700">{formatNumber(item.stock_on_hand)}</b>
-            </p>
+            <QtyLine bill={bill} item={item} />
+            {!pending && !item.is_removed && isPartial(item) && !shortfallHandled(item) && <ShortfallButton item={item} onDone={onNotice} />}
             {item.staff_note && <p className="mt-1 text-xs text-slate-600">📝 สาขา: {item.staff_note}</p>}
             {item.hq_note && <p className="mt-1 text-xs text-sky-700">💬 HQ: {item.hq_note}</p>}
             {item.picked_at && <p className="mt-1 text-[11px] font-bold text-slate-500">📦 แพ็คแล้ว{item.picked_by ? ` โดย ${item.picked_by}` : ''} · {formatDateTime(item.picked_at)}</p>}
@@ -421,7 +421,7 @@ function ItemFormModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; bill
         <Field label="รหัสสินค้า" required>
           <input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={inputClass} maxLength={100} />
         </Field>
-        <Field label="คงเหลือหน้าร้าน (สาขา)" hint="ข้อมูลจากสาขา แก้เมื่อจำเป็นเท่านั้น">
+        <Field label="จำนวนที่สั่ง (ชิ้น)" hint="จำนวนที่สาขาสั่ง แก้เมื่อจำเป็นเท่านั้น">
           <input value={form.stock} onChange={(event) => setForm({ ...form, stock: numeric(event.target.value) })} className={inputClass} inputMode="numeric" />
         </Field>
         <Field label="หมายเหตุ HQ">
@@ -483,7 +483,7 @@ function SubstitutionModal({ dialog, bill, onClose, mutate }: { dialog: Dialog; 
               <p className="text-xs font-bold text-slate-400">สินค้าเดิม (เก็บไว้ ไม่ถูกลบ)</p>
               <p className="font-bold">{item.product_name}</p>
               <p className="text-xs text-slate-500">
-                รหัส {item.product_code} · คงเหลือที่สาขาระบุ {formatNumber(item.stock_on_hand)}
+                รหัส {item.product_code} · สาขาสั่ง {formatNumber(item.stock_on_hand)} ชิ้น
               </p>
             </div>
           </div>
@@ -700,4 +700,111 @@ function ResolveIssueDialog({ open, bill, onClose, onDone }: { open: boolean; bi
 function shipSummary(bill: BillDetail) {
   const packing = packingProgress(bill);
   return `แพ็คของเสร็จ ${packing.picked} รายการ${packing.checkers.length ? ` (แพ็คโดย ${packing.checkers.join(', ')})` : ''}`;
+}
+
+type ShortfallMode = 'same' | 'substitute' | 'none';
+
+// ของไม่พอ: แอดมินเลือกจัดการจำนวนที่ขาดทีละรายการ — ยกยอดตัวเดิม / ยกยอดเป็นของแทน / ไม่ยกยอด (ทำได้ครั้งเดียว)
+function ShortfallButton({ item, onDone }: { item: BillItemDetail; onDone: (text: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<ShortfallMode>('same');
+  const [subName, setSubName] = useState('');
+  const [subCode, setSubCode] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const short = shortQty(item);
+  const productName = item.substitution?.product_name ?? item.product_name;
+
+  const openDialog = () => {
+    setMode('same');
+    setSubName('');
+    setSubCode('');
+    setReason('');
+    setError(null);
+    setOpen(true);
+  };
+
+  const confirm = async () => {
+    if (mode === 'substitute' && (!subName.trim() || !subCode.trim())) return setError('กรุณาใส่ชื่อและรหัสสินค้าทดแทน');
+    if (mode === 'none' && !reason.trim()) return setError('กรุณาระบุเหตุผลที่ไม่ยกยอด');
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ carriedTo: string | null; qty: number }>(`/admin/stock-request/api/items/${item.id}/carry-shortfall`, {
+        method: 'POST',
+        json: { mode, productName: subName.trim(), productCode: subCode.trim(), reason: reason.trim() || null },
+      });
+      setOpen(false);
+      onDone(
+        mode === 'none'
+          ? `บันทึกแล้ว: ไม่ยกยอด ${productName} ${result.qty} ชิ้น`
+          : `ยกยอด ${mode === 'substitute' ? subName.trim() : productName} ${result.qty} ชิ้น ไปบิล ${result.carriedTo} แล้ว`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const modes: { value: ShortfallMode; label: string }[] = [
+    { value: 'same', label: '↪ ยกยอดตัวเดิม' },
+    { value: 'substitute', label: '🔄 ยกยอดเป็นของแทน' },
+    { value: 'none', label: '✕ ไม่ยกยอด' },
+  ];
+
+  return (
+    <>
+      <button type="button" onClick={openDialog} className="mt-1.5 rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-800 ring-1 ring-amber-200 hover:bg-amber-200">
+        ⚙️ จัดการส่วนที่ขาด ({short} ชิ้น)
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="จัดการส่วนที่ขาด"
+        confirmLabel={mode === 'none' ? 'บันทึก ไม่ยกยอด' : `ยกยอด ${short} ชิ้น`}
+        tone={mode === 'none' ? 'danger' : 'primary'}
+        busy={busy}
+        onCancel={() => setOpen(false)}
+        onConfirm={confirm}
+        message={
+          <>
+            <b>{productName}</b> ส่งได้ {item.hq_ship_qty}/{item.stock_on_hand} ชิ้น · ขาด <b>{short} ชิ้น</b> — เลือกวิธีจัดการ (ทำได้ครั้งเดียว สาขาได้รับแจ้ง)
+          </>
+        }
+      >
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="วิธีจัดการส่วนที่ขาด">
+            {modes.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={mode === option.value}
+                onClick={() => setMode(option.value)}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition ${mode === option.value ? 'bg-pink-600 text-white ring-pink-600' : 'bg-white text-slate-600 ring-slate-200 hover:ring-pink-300'}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {mode === 'same' && <p className="text-xs text-slate-500">เพิ่ม {productName} จำนวน {short} ชิ้นเข้าบิลรอบถัดไปของสาขาทันที</p>}
+          {mode === 'substitute' && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input value={subName} onChange={(event) => setSubName(event.target.value)} className={inputClass} maxLength={200} placeholder="ชื่อสินค้าทดแทน *" />
+              <input value={subCode} onChange={(event) => setSubCode(event.target.value)} className={inputClass} maxLength={100} placeholder="รหัสสินค้าทดแทน *" />
+            </div>
+          )}
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            className={`${inputClass} min-h-16`}
+            maxLength={300}
+            placeholder={mode === 'none' ? 'เหตุผลที่ไม่ยกยอด (บังคับ) เช่น สินค้าเลิกผลิต' : 'หมายเหตุ (ไม่บังคับ) — สาขาจะเห็นในบิลถัดไป'}
+          />
+          <InlineError message={error} />
+        </div>
+      </ConfirmDialog>
+    </>
+  );
 }

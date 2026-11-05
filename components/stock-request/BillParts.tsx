@@ -2,6 +2,7 @@
 
 import { AUDIT_ACTION_LABEL, FIELD_LABEL, STATUS_LABEL, STATUS_ORDER } from '@/lib/stock-request/constants';
 import { formatDateTime, formatNumber } from '@/lib/stock-request/client';
+import { isPartial, parseShortReason, sentQty, shortQty } from '@/lib/stock-request/qty';
 import type { AuditLogRow, BillDetail, BillItemDetail, JsonObject } from '@/lib/stock-request/types';
 import { PhotoThumb } from './ui';
 
@@ -71,7 +72,7 @@ export function SubstitutionPair({ item }: { item: BillItemDetail }) {
           <p className="font-bold text-slate-400 line-through decoration-slate-300">สินค้าเดิม</p>
           <p className="font-bold text-slate-700">{item.product_name}</p>
           <p className="text-slate-500">รหัส {item.product_code}</p>
-          <p className="text-slate-500">คงเหลือที่สาขาระบุ {formatNumber(item.stock_on_hand)}</p>
+          <p className="text-slate-500">สาขาสั่ง {formatNumber(item.stock_on_hand)} ชิ้น</p>
         </div>
       </div>
       <span className="text-center text-lg text-pink-400 sm:px-1">→</span>
@@ -233,5 +234,30 @@ export function RemovedItems({ bill }: { bill: BillDetail }) {
         })}
       </ul>
     </section>
+  );
+}
+
+/** จำนวนที่สั่ง และจำนวนที่ส่งจริง (ถ้าของไม่พอ) พร้อมเหตุผลล่าสุด */
+export function QtyLine({ bill, item }: { bill: Pick<BillDetail, 'audit_logs'>; item: BillItemDetail }) {
+  if (!isPartial(item)) {
+    return (
+      <p className="mt-1 text-xs text-slate-600">
+        สั่ง <b className="text-pink-700">{formatNumber(item.stock_on_hand)}</b> ชิ้น
+      </p>
+    );
+  }
+  const log = bill.audit_logs
+    .filter((entry) => entry.bill_item_id === item.id && entry.action === 'ship_qty_change')
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  return (
+    <div className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-800 ring-1 ring-amber-200">
+      <p className="font-black">
+        สั่ง {formatNumber(item.stock_on_hand)} · ส่งได้ {formatNumber(sentQty(item))} ชิ้น (ขาด {formatNumber(shortQty(item))})
+      </p>
+      {(() => {
+        const parsed = parseShortReason(log?.reason);
+        return parsed && <p>เหตุผล: {parsed.reason}{parsed.packer ? ` · ผู้แพ็ค ${parsed.packer}` : ''}</p>;
+      })()}
+    </div>
   );
 }

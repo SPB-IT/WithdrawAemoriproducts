@@ -43,6 +43,14 @@ export function optionalInt(value: unknown, label: string): number | null {
   return num;
 }
 
+/** จำนวนที่สาขาสั่ง: จำนวนเต็มอย่างน้อย 1 */
+export function requireOrderQty(value: unknown, label = 'จำนวนที่ต้องการสั่ง'): number {
+  const num = optionalInt(value, label);
+  if (num === null) throw new ApiError(400, 'SR_INVALID_INPUT', `กรุณากรอก${label}`);
+  if (num < 1) throw new ApiError(400, 'SR_INVALID_INPUT', `${label}ต้องอย่างน้อย 1`);
+  return num;
+}
+
 export function requireInt(value: unknown, label: string): number {
   const num = optionalInt(value, label);
   if (num === null) throw new ApiError(400, 'SR_INVALID_INPUT', `กรุณากรอก${label}`);

@@ -10,13 +10,13 @@ import type { BillStatus } from '@/lib/stock-request/types';
 interface StockSummary {
   reportedItems: number;
   reportedBranches: number;
-  outAtBranch: number;
+  orderedQty: number;
   toPack: number;
   toPackBills: number;
   packedBillsReady: number;
   shortages: number;
-  topProducts: { product_code: string; product_name: string; min_stock: number | null; branches: { name: string; stock: number | null }[] }[];
-  shortageList: { kind: 'missing' | 'no_stock'; id: string; bill_id: string; bill_no: string; branch_name: string; product_name: string; product_code: string; note: string | null }[];
+  topProducts: { product_code: string; product_name: string; total_qty: number; branches: { name: string; stock: number | null }[] }[];
+  shortageList: { kind: 'missing' | 'no_stock' | 'partial'; id: string; bill_id: string; bill_no: string; branch_name: string; product_name: string; product_code: string; note: string | null }[];
 }
 
 interface DashboardData {
@@ -157,7 +157,7 @@ export default function HqDashboardPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-slate-800">{item.product_name}</p>
                       <p className="truncate text-xs text-slate-500">
-                        {item.branch_name} · {item.product_code} · คงเหลือ {formatNumber(item.stock_on_hand)}
+                        {item.branch_name} · {item.product_code} · สั่ง {formatNumber(item.stock_on_hand)} ชิ้น
                       </p>
                       <p className="text-[11px] text-slate-400">
                         {item.reported_by_name} · {formatDateTime(item.created_at)}
@@ -180,9 +180,9 @@ export default function HqDashboardPage() {
 function StockSection({ stock }: { stock: StockSummary }) {
   const cards = [
     { icon: '📝', label: 'สินค้าที่แจ้งรอบนี้', value: stock.reportedItems, sub: `จาก ${stock.reportedBranches} สาขา · ยังไม่ตัดบิล`, tone: 'border-amber-100 bg-amber-50 text-amber-700', href: '/admin/stock-request/bills?status=pending' },
-    { icon: '🚨', label: 'หมดแล้วที่สาขา', value: stock.outAtBranch, sub: 'คงเหลือหน้าร้าน 0 ชิ้น', tone: stock.outAtBranch ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-100 bg-white text-slate-500', href: '/admin/stock-request/bills?status=pending' },
+    { icon: '🧮', label: 'จำนวนที่สาขาสั่งรวม', value: stock.orderedQty, sub: 'ชิ้น · รอบนี้ (ยังไม่ตัดบิล)', tone: 'border-pink-100 bg-pink-50 text-pink-700', href: '/admin/stock-request/bills?status=pending' },
     { icon: '📦', label: 'รอแพ็คของ', value: stock.toPack, sub: stock.toPack ? `ใน ${stock.toPackBills} บิล${stock.packedBillsReady ? ` · แพ็คเสร็จรอส่ง ${stock.packedBillsReady} บิล` : ''}` : stock.packedBillsReady ? `แพ็คเสร็จรอส่ง ${stock.packedBillsReady} บิล` : 'ไม่มีของค้างแพ็ค', tone: 'border-sky-100 bg-sky-50 text-sky-700', href: '/admin/stock-request/pick' },
-    { icon: '❌', label: 'ของขาด / ไม่มีส่ง', value: stock.shortages, sub: 'สาขาแจ้งไม่ได้รับ + ไม่มีของส่ง', tone: stock.shortages ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-100 bg-white text-slate-500', href: '/admin/stock-request/branches' },
+    { icon: '❌', label: 'ของขาด / ส่งไม่ครบ', value: stock.shortages, sub: 'สาขาไม่ได้รับ + ไม่มีของ + ส่งได้ไม่ครบ', tone: stock.shortages ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-100 bg-white text-slate-500', href: '/admin/stock-request/branches' },
   ];
 
   return (
@@ -203,7 +203,7 @@ function StockSection({ stock }: { stock: StockSummary }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
           <h3 className="mb-1 text-sm font-black text-slate-700">🔥 สินค้าที่สาขาแจ้งใกล้หมด (รอบนี้)</h3>
-          <p className="mb-3 text-[11px] text-slate-400">เรียงจากจำนวนสาขาที่แจ้ง และคงเหลือน้อยสุด</p>
+          <p className="mb-3 text-[11px] text-slate-400">เรียงจากจำนวนสาขาที่สั่ง และจำนวนรวมที่สั่ง</p>
           {stock.topProducts.length === 0 ? (
             <EmptyState icon="✅" title="ยังไม่มีสาขาแจ้งรอบนี้" />
           ) : (
@@ -217,15 +217,11 @@ function StockSection({ stock }: { stock: StockSummary }) {
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <span className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[11px] font-black text-pink-700">{product.branches.length} สาขา</span>
-                      {product.min_stock !== null && (
-                        <span className={`text-[11px] font-black ${product.min_stock === 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                          {product.min_stock === 0 ? 'หมดแล้ว' : `เหลือน้อยสุด ${formatNumber(product.min_stock)}`}
-                        </span>
-                      )}
+                      <span className="text-[11px] font-black text-slate-600">สั่งรวม {formatNumber(product.total_qty)} ชิ้น</span>
                     </div>
                   </div>
                   <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
-                    {product.branches.map((branch) => `${branch.name} (${branch.stock ?? '-'})`).join(' · ')}
+                    {product.branches.map((branch) => `${branch.name} สั่ง ${branch.stock ?? '-'}`).join(' · ')}
                   </p>
                 </li>
               ))}
@@ -234,8 +230,8 @@ function StockSection({ stock }: { stock: StockSummary }) {
         </div>
 
         <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-          <h3 className="mb-1 text-sm font-black text-slate-700">❌ ของขาด / ไม่มีของส่ง</h3>
-          <p className="mb-3 text-[11px] text-slate-400">สาขาแจ้งว่าไม่ได้รับ (ปัญหายังไม่ปิด) และของที่ผู้แพ็คของกดว่าไม่มีของส่งในบิลรอบนี้</p>
+          <h3 className="mb-1 text-sm font-black text-slate-700">❌ ของขาด / ส่งไม่ครบ</h3>
+          <p className="mb-3 text-[11px] text-slate-400">สาขาแจ้งว่าไม่ได้รับ (ปัญหายังไม่ปิด) ของที่ไม่มีส่ง และของที่ส่งได้ไม่ครบในบิลรอบนี้</p>
           {stock.shortageList.length === 0 ? (
             <EmptyState icon="✅" title="ไม่มีของขาด" />
           ) : (
@@ -250,8 +246,10 @@ function StockSection({ stock }: { stock: StockSummary }) {
                           {item.branch_name} · <span className="font-mono">{item.bill_no}</span>
                         </p>
                       </div>
-                      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-black ${item.kind === 'missing' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
-                        {item.kind === 'missing' ? 'สาขาไม่ได้รับ' : 'ไม่มีของส่ง'}
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-black ${item.kind === 'missing' ? 'bg-rose-100 text-rose-700' : item.kind === 'partial' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'}`}
+                      >
+                        {item.kind === 'missing' ? 'สาขาไม่ได้รับ' : item.kind === 'partial' ? 'ส่งได้ไม่ครบ' : 'ไม่มีของส่ง'}
                       </span>
                     </div>
                     {item.note && <p className="mt-1 line-clamp-2 text-[11px] text-rose-600">📝 {item.note}</p>}

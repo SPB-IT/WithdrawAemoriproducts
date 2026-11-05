@@ -26,7 +26,7 @@ export const POST = handle(async (request: NextRequest, context: { params: Promi
     p_item_id: crypto.randomUUID(),
     p_product_name: requireText(body.productName, 200, 'ชื่อสินค้า'),
     p_product_code: requireText(body.productCode, 100, 'รหัสสินค้า'),
-    p_stock_on_hand: optionalInt(body.stockOnHand, 'จำนวนคงเหลือ'),
+    p_stock_on_hand: optionalInt(body.stockOnHand, 'จำนวนที่สั่ง'),
     p_hq_ship_qty: null,
     p_hq_note: optionalText(body.hqNote, 1000),
     p_photo_path: photoPath,

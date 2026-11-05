@@ -3,6 +3,7 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { AUDIT_ACTION_LABEL, FIELD_LABEL, STATUS_LABEL } from './constants';
+import { sentQty } from './qty';
 import type { BillDetail, JsonObject } from './types';
 
 const HEADER_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDE9FE' } };
@@ -65,7 +66,8 @@ export async function exportBillsExcel(bills: BillDetail[], filename: string) {
       { header: 'วันที่สร้างบิล', key: 'created', width: 18 },
       { header: 'ชื่อสินค้า', key: 'name', width: 32 },
       { header: 'รหัสสินค้า', key: 'code', width: 16 },
-      { header: 'คงเหลือหน้าร้าน', key: 'stock', width: 14 },
+      { header: 'จำนวนที่สั่ง', key: 'stock', width: 14 },
+      { header: 'จำนวนที่ส่งจริง', key: 'sent', width: 14 },
       { header: 'สินค้าทดแทน', key: 'sub_name', width: 28 },
       { header: 'รหัสทดแทน', key: 'sub_code', width: 16 },
       { header: 'เหตุผลทดแทน', key: 'sub_reason', width: 28 },
@@ -84,6 +86,7 @@ export async function exportBillsExcel(bills: BillDetail[], filename: string) {
         name: item.product_name,
         code: item.product_code,
         stock: item.stock_on_hand,
+        sent: item.is_removed ? 0 : sentQty(item),
         sub_name: item.substitution?.product_name ?? '',
         sub_code: item.substitution?.product_code ?? '',
         sub_reason: item.substitution?.reason ?? '',
@@ -167,7 +170,7 @@ export async function exportBillsExcel(bills: BillDetail[], filename: string) {
       { header: 'สาขา', key: 'branch', width: 24 },
       { header: 'สินค้าเดิม', key: 'original', width: 28 },
       { header: 'รหัสเดิม', key: 'original_code', width: 16 },
-      { header: 'คงเหลือที่สาขาระบุ', key: 'stock', width: 14 },
+      { header: 'จำนวนที่สาขาสั่ง', key: 'stock', width: 14 },
       { header: 'สินค้าทดแทน', key: 'sub', width: 28 },
       { header: 'รหัสทดแทน', key: 'sub_code', width: 16 },
       { header: 'เหตุผล', key: 'reason', width: 30 },

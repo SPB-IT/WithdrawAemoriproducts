@@ -8,6 +8,7 @@ import PickLinkButton from '@/components/stock-request/PickLinkButton';
 import ShipDialog from '@/components/stock-request/ShipDialog';
 import { ConfirmDialog, ErrorState, Field, InlineError, LoadingState, Modal, PhotoThumb, Spinner, StatusBadge, inputClass, primaryButton, secondaryButton } from '@/components/stock-request/ui';
 import { apiFetch, errorMessage, formatDateTime, formatNumber, uploadPhoto } from '@/lib/stock-request/client';
+import { isPartial } from '@/lib/stock-request/qty';
 import type { BillDetail, BillItemDetail } from '@/lib/stock-request/types';
 
 const REFRESH_MS = 10_000;
@@ -40,6 +41,7 @@ export default function PickingChecklistPage() {
   const [hidePicked, setHidePicked] = useState(false);
   const [shipOpen, setShipOpen] = useState(false);
   const [rejecting, setRejecting] = useState<BillItemDetail | null>(null);
+  const [partialItem, setPartialItem] = useState<BillItemDetail | null>(null);
   const [substituting, setSubstituting] = useState<BillItemDetail | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // ลงชื่อผู้เช็คของ — ต้องมีก่อนติ๊ก/ปฏิเสธ/ทดแทน
@@ -257,10 +259,15 @@ export default function PickingChecklistPage() {
                     </>
                   )}
                   <span className="mt-1 block text-xs text-slate-500">
-                    คงเหลือที่สาขา <b className="text-pink-700">{formatNumber(item.stock_on_hand)}</b>
+                    สั่ง <b className="text-pink-700">{formatNumber(item.stock_on_hand)}</b> ชิ้น
                   </span>
                   {(item.hq_note || item.staff_note) && (
                     <span className="mt-1 block text-[11px] text-slate-500">{[item.hq_note && `HQ: ${item.hq_note}`, item.staff_note && `สาขา: ${item.staff_note}`].filter(Boolean).join(' · ')}</span>
+                  )}
+                  {picked && isPartial(item) && (
+                    <span className="mt-1 block rounded-lg bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-800">
+                      ⚠️ ของไม่พอ แพ็คได้ {formatNumber(item.hq_ship_qty)}/{formatNumber(item.stock_on_hand)} ชิ้น
+                    </span>
                   )}
                   {picked && (
                     <span className="mt-1 block text-[11px] font-bold text-emerald-700">
@@ -270,7 +277,12 @@ export default function PickingChecklistPage() {
                 </span>
               </div>
               {pickable && (
-                <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-xs font-bold">
+                <div className={`mt-1.5 grid gap-1.5 text-xs font-bold ${(item.stock_on_hand ?? 0) > 1 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {(item.stock_on_hand ?? 0) > 1 && (
+                    <button type="button" onClick={() => requirePicker() && setPartialItem(item)} className="rounded-xl bg-amber-50 py-2 text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100">
+                      ⚠️ ได้ไม่ครบ
+                    </button>
+                  )}
                   <button type="button" onClick={() => requirePicker() && setRejecting(item)} className="rounded-xl bg-rose-50 py-2 text-rose-600 ring-1 ring-rose-100 hover:bg-rose-100">
                     ✖ ไม่มีของ / ปฏิเสธ
                   </button>
@@ -317,6 +329,17 @@ export default function PickingChecklistPage() {
         </div>
       )}
 
+      <PartialDialog
+        item={partialItem}
+        onClose={() => setPartialItem(null)}
+        onConfirm={async (qty, reason) => {
+          if (!partialItem) return;
+          await apiFetch(`/admin/stock-request/api/items/${partialItem.id}/pick`, { method: 'POST', json: { picked: true, pickerName: picker.trim(), qty, reason } });
+          setPartialItem(null);
+          setNotice(`บันทึกแล้ว: ${partialItem.product_name} แพ็คได้ ${qty}/${partialItem.stock_on_hand} ชิ้น`);
+          await load();
+        }}
+      />
       <RejectDialog
         item={rejecting}
         onClose={() => setRejecting(null)}
@@ -521,5 +544,82 @@ function SubstituteDialog({ item, bill, picker, onClose, onSaved }: { item: Bill
         </form>
       )}
     </Modal>
+  );
+}
+
+// ของไม่พอ: แพ็คได้น้อยกว่าที่สาขาสั่ง — ใส่จำนวนที่แพ็คได้จริง + เหตุผล (บันทึกประวัติและแจ้งสาขา)
+function PartialDialog({ item, onClose, onConfirm }: { item: BillItemDetail | null; onClose: () => void; onConfirm: (qty: number, reason: string) => Promise<void> }) {
+  const [qty, setQty] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const quick = ['ของในคลังไม่พอ', 'ของเสียบางส่วน', 'รอของเข้าเพิ่ม'];
+  const ordered = item?.stock_on_hand ?? 0;
+
+  useEffect(() => {
+    if (!item) return;
+    const timer = setTimeout(() => {
+      setQty(item.hq_ship_qty !== null && item.hq_ship_qty < ordered ? String(item.hq_ship_qty) : '');
+      setReason('');
+      setError(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [item, ordered]);
+
+  const confirm = async () => {
+    const value = Number(qty);
+    if (!qty || !Number.isInteger(value) || value < 1 || value >= ordered) return setError(`ใส่จำนวนที่แพ็คได้ระหว่าง 1 ถึง ${ordered - 1} ชิ้น (ถ้าไม่มีเลยให้กด “ไม่มีของ”)`);
+    if (!reason.trim()) return setError('กรุณาระบุเหตุผลที่ส่งไม่ครบ');
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm(value, reason.trim());
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ConfirmDialog
+      open={Boolean(item)}
+      title="ของไม่พอ ส่งได้ไม่ครบ"
+      confirmLabel="บันทึกจำนวนที่แพ็คได้"
+      busy={busy}
+      onCancel={onClose}
+      onConfirm={confirm}
+      message={
+        <>
+          <b>{item?.substitution?.product_name ?? item?.product_name}</b> · สาขาสั่ง <b>{formatNumber(ordered)}</b> ชิ้น — ใส่จำนวนที่แพ็คได้จริง สาขาจะเห็นว่าได้กี่ชิ้นและเพราะอะไร
+        </>
+      }
+    >
+      <div className="space-y-2">
+        <label className="block text-xs font-black text-slate-600" htmlFor="partial-qty">
+          แพ็คได้จริง (ชิ้น)
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            id="partial-qty"
+            value={qty}
+            onChange={(event) => setQty(event.target.value.replace(/[^0-9]/g, ''))}
+            inputMode="numeric"
+            className={`${inputClass} w-28 text-center text-lg font-black`}
+            placeholder="0"
+          />
+          <span className="text-sm text-slate-500">จาก {formatNumber(ordered)} ชิ้น{qty && Number(qty) < ordered ? ` · ขาด ${ordered - Number(qty)} ชิ้น` : ''}</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {quick.map((text) => (
+            <button key={text} type="button" onClick={() => setReason(text)} className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-200">
+              {text}
+            </button>
+          ))}
+        </div>
+        <textarea value={reason} onChange={(event) => setReason(event.target.value)} className={`${inputClass} min-h-16`} maxLength={300} placeholder="เหตุผลที่ส่งไม่ครบ (บังคับ)" />
+        <InlineError message={error} />
+      </div>
+    </ConfirmDialog>
   );
 }

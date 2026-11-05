@@ -161,7 +161,7 @@ function CurrentBill() {
                     </div>
                     <p className="text-xs text-slate-500">รหัส {item.product_code}</p>
                     <p className="mt-1 text-sm">
-                      คงเหลือหน้าร้าน <span className="font-black text-pink-700">{formatNumber(item.stock_on_hand)}</span>
+                      สั่ง <span className="font-black text-pink-700">{formatNumber(item.stock_on_hand)}</span> ชิ้น
                     </p>
                     {item.staff_note && <p className="mt-1 text-xs text-slate-600">📝 {item.staff_note}</p>}
                     {item.source === 'hq' && item.hq_note && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">🏢 {item.hq_note}</p>}
@@ -297,7 +297,7 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
     if (!photo) return flagInvalid('photo', 'กรุณาถ่ายรูปหรือเลือกรูปสินค้า');
     if (!productName.trim()) return flagInvalid('name', 'กรุณากรอกชื่อสินค้า');
     if (!productCode.trim()) return flagInvalid('code', 'กรุณากรอกรหัสสินค้า');
-    if (stock.trim() === '' || !Number.isInteger(stockValue) || stockValue < 0) return flagInvalid('stock', 'กรอกจำนวนคงเหลือ (ตั้งแต่ 0 ขึ้นไป)');
+    if (stock.trim() === '' || !Number.isInteger(stockValue) || stockValue < 1) return flagInvalid('stock', 'กรอกจำนวนที่ต้องการสั่ง (อย่างน้อย 1)');
     if (!staffName.trim()) return flagInvalid('staff', 'กรุณากรอกหรือเลือกชื่อผู้ลงรายการ');
 
     setSaving(true);
@@ -387,8 +387,8 @@ function AddItemModal({ open, onClose, onSaved }: { open: boolean; onClose: () =
             <input ref={(el) => { fieldRefs.current.code = el; }} value={productCode} onChange={(event) => edit('code', setProductCode)(event.target.value)} className={fieldClass('code')} maxLength={100} placeholder="เช่น SP-3396" autoCapitalize="characters" />
             {fieldError('code')}
           </Field>
-          <Field label="คงเหลือหน้าร้าน" required hint="จำนวนที่เหลือจริงตอนนี้">
-            <input ref={(el) => { fieldRefs.current.stock = el; }} value={stock} onChange={(event) => edit('stock', setStock)(event.target.value.replace(/[^0-9]/g, ''))} className={fieldClass('stock')} inputMode="numeric" placeholder="0" />
+          <Field label="จำนวนที่ต้องการสั่ง" required hint="จำนวนชิ้นที่อยากให้สำนักงานใหญ่ส่งมา">
+            <input ref={(el) => { fieldRefs.current.stock = el; }} value={stock} onChange={(event) => edit('stock', setStock)(event.target.value.replace(/[^0-9]/g, ''))} className={fieldClass('stock')} inputMode="numeric" placeholder="เช่น 5" />
             {fieldError('stock')}
           </Field>
         </div>
@@ -442,7 +442,7 @@ function EditItemModal({ item, onClose, onSaved }: { item: BillItemDetail | null
     const stockValue = Number(stock);
     if (!productName.trim()) return setError('กรุณากรอกชื่อสินค้า');
     if (!productCode.trim()) return setError('กรุณากรอกรหัสสินค้า');
-    if (stock.trim() === '' || !Number.isInteger(stockValue) || stockValue < 0) return setError('จำนวนคงเหลือต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+    if (stock.trim() === '' || !Number.isInteger(stockValue) || stockValue < 1) return setError('จำนวนที่ต้องการสั่งต้องเป็นจำนวนเต็มอย่างน้อย 1');
 
     if (!staffName.trim()) return setError('กรุณาระบุชื่อผู้แก้ไข');
     setSaving(true);
@@ -495,7 +495,7 @@ function EditItemModal({ item, onClose, onSaved }: { item: BillItemDetail | null
             <Field label="รหัสสินค้า" required>
               <input value={productCode} onChange={(event) => setProductCode(event.target.value)} className={inputClass} maxLength={100} autoCapitalize="characters" />
             </Field>
-            <Field label="คงเหลือหน้าร้าน" required>
+            <Field label="จำนวนที่ต้องการสั่ง" required>
               <input value={stock} onChange={(event) => setStock(event.target.value.replace(/[^0-9]/g, ''))} className={inputClass} inputMode="numeric" />
             </Field>
           </div>

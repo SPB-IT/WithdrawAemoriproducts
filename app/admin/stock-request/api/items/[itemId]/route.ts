@@ -15,7 +15,7 @@ export const PATCH = handle(async (request: NextRequest, context: { params: Prom
   const patch: Record<string, unknown> = {};
   if ('productName' in input) patch.product_name = requireText(input.productName, 200, 'ชื่อสินค้า');
   if ('productCode' in input) patch.product_code = requireText(input.productCode, 100, 'รหัสสินค้า');
-  if ('stockOnHand' in input) patch.stock_on_hand = optionalInt(input.stockOnHand, 'จำนวนคงเหลือ');
+  if ('stockOnHand' in input) patch.stock_on_hand = optionalInt(input.stockOnHand, 'จำนวนที่สั่ง');
   if ('hqNote' in input) patch.hq_note = optionalText(input.hqNote, 1000);
   if (Object.keys(patch).length === 0) throw new ApiError(400, 'SR_INVALID_INPUT', 'ไม่มีข้อมูลที่ต้องแก้ไข');
 

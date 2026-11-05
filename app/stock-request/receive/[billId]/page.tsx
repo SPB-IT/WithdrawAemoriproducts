@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IssueBadge, IssueBanner, RemovedItems } from '@/components/stock-request/BillParts';
+import { IssueBadge, IssueBanner, QtyLine, RemovedItems } from '@/components/stock-request/BillParts';
 import BranchShell, { useBranch } from '@/components/stock-request/BranchShell';
 import StaffNameField, { readRecentStaff, saveRecentStaff, useBranchStaffNames } from '@/components/stock-request/StaffNameField';
 import { ConfirmDialog, ErrorState, InlineError, LoadingState, PhotoThumb, Spinner, StatusBadge, inputClass, primaryButton, secondaryButton } from '@/components/stock-request/ui';
@@ -197,6 +197,7 @@ function ReceiveCheck() {
                   {sub && <span className="inline-block rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-800">สินค้าทดแทน</span>}
                   <p className="font-black text-slate-800">{sub ? sub.product_name : item.product_name}</p>
                   <p className="text-xs text-slate-500">รหัส {sub ? sub.product_code : item.product_code}</p>
+                  <QtyLine bill={bill} item={item} />
                   {sub && (
                     <p className="text-[11px] text-slate-400">
                       แทน {item.product_name} · {sub.reason}
