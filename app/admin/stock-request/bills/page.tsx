@@ -102,9 +102,10 @@ export default function HqBillsPage() {
   // บิลรอตัดที่ยังไม่มีรายการ = บิลที่ระบบเปิดรอไว้ ไม่ต้องทำอะไร จึงไม่แสดงในตาราง
   const rows = data?.bills.filter((bill) => !(bill.status === 'pending' && bill.item_count === 0)) ?? [];
   const hiddenEmpty = (data?.bills.length ?? 0) - rows.length;
-  // จัดกลุ่มตามสาขา (เรียงชื่อสาขา) ในแต่ละกลุ่มยังเรียงบิลใหม่ → เก่า
-  const groups = [...rows.reduce((map, bill) => map.set(bill.branch_name, [...(map.get(bill.branch_name) ?? []), bill]), new Map<string, BillSummary[]>())].sort(([a], [b]) =>
-    a.localeCompare(b, 'th'),
+  // จัดกลุ่มตามสาขา เรียงลำดับเดียวกับระบบเบิกสินค้า (ลำดับจาก /api/stock-request/branches) · ในแต่ละกลุ่มเรียงบิลใหม่ → เก่า
+  const branchOrder = new Map(branches.map((branch, index) => [branch.name, index]));
+  const groups = [...rows.reduce((map, bill) => map.set(bill.branch_name, [...(map.get(bill.branch_name) ?? []), bill]), new Map<string, BillSummary[]>())].sort(
+    ([a], [b]) => (branchOrder.get(a) ?? Number.MAX_SAFE_INTEGER) - (branchOrder.get(b) ?? Number.MAX_SAFE_INTEGER),
   );
 
   return (

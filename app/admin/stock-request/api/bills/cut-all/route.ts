@@ -24,10 +24,11 @@ async function loadCandidates(): Promise<CutAllCandidate[]> {
   ]);
   if (error) throw fromDbError(error);
   const names = new Map(branches.map((branch) => [branch.id, branch.name]));
+  const order = new Map(branches.map((branch, index) => [branch.id, index]));
   return ((data ?? []) as (Pick<BillRow, 'id' | 'bill_no' | 'branch_id'> & { bill_items: { count: number }[] })[])
     .map((bill) => ({ id: bill.id, bill_no: bill.bill_no, branch_id: bill.branch_id, branch_name: names.get(bill.branch_id) ?? '', item_count: bill.bill_items?.[0]?.count ?? 0 }))
     .filter((bill) => bill.item_count > 0 && names.has(bill.branch_id))
-    .sort((a, b) => a.branch_name.localeCompare(b.branch_name, 'th'));
+    .sort((a, b) => order.get(a.branch_id)! - order.get(b.branch_id)!); // ลำดับเดียวกับระบบเบิกสินค้า
 }
 
 export const GET = handle(async () => {

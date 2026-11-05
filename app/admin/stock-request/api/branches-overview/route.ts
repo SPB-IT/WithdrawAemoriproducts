@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/stock-request/admin-auth';
 import { ApiError, fromDbError, handle } from '@/lib/stock-request/errors';
-import { getBranchNameMap, getBranches, loadBillDetails, loadBranchHistory } from '@/lib/stock-request/queries';
+import { getBranchNameMap, getBranchOrder, getBranches, loadBillDetails, loadBranchHistory } from '@/lib/stock-request/queries';
 import type { BillRow } from '@/lib/stock-request/types';
 import { getServiceClient } from '@/lib/stock-request/supabase-admin';
 import { parseBranchId } from '@/lib/stock-request/validation';
@@ -32,7 +32,7 @@ export const GET = handle(async (request: NextRequest) => {
       if (list.length < 3) perBranch.set(bill.branch_id, [...list, bill]);
     }
     const details = await loadBillDetails([...perBranch.values()].flat(), { photos: false, includeRemoved: false });
-    const names = await getBranchNameMap();
+    const [names, order] = await Promise.all([getBranchNameMap(), getBranchOrder()]);
     const active = new Set(branches.map((branch) => branch.id));
     const groups = [...perBranch.keys()]
       .map((branchId) => ({
@@ -41,7 +41,7 @@ export const GET = handle(async (request: NextRequest) => {
         archived: !active.has(branchId),
         bills: details.filter((bill) => bill.branch_id === branchId),
       }))
-      .sort((a, b) => a.branch_name.localeCompare(b.branch_name, 'th'));
+      .sort((a, b) => (order.get(a.branch_id) ?? 0) - (order.get(b.branch_id) ?? 0)); // ลำดับเดียวกับระบบเบิกสินค้า
     return NextResponse.json({ groups });
   }
 

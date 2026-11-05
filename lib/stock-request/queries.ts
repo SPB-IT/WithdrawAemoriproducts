@@ -32,11 +32,12 @@ export async function rpc<T>(fn: string, args: Record<string, unknown>): Promise
 // Branches (public.branches — read only, shared with the legacy system)
 // ---------------------------------------------------------------------------
 // สาขาที่ "เก็บถาวร" (archived_at) ถูกซ่อนจากรายการเลือก แต่ยังใช้แสดงชื่อในประวัติบิลได้
+// เรียงตามชื่อจากฐานข้อมูล (order by name) — ลำดับเดียวกับระบบเบิกสินค้า
 let branchCache: { at: number; data: (Branch & { archived: boolean })[] } | null = null;
 
 async function loadAllBranches() {
   if (branchCache && Date.now() - branchCache.at < 60_000) return branchCache.data;
-  const { data, error } = await getServiceClient().schema('public').from('branches').select('id, name, archived_at').order('id');
+  const { data, error } = await getServiceClient().schema('public').from('branches').select('id, name, archived_at').order('name');
   if (error) throw fromDbError(error);
   const branches = (data ?? []).map((row: { id: number | string; name: string; archived_at: string | null }) => ({ id: Number(row.id), name: row.name, archived: !!row.archived_at }));
   branchCache = { at: Date.now(), data: branches };
@@ -55,6 +56,11 @@ export async function getBranches(): Promise<Branch[]> {
 export async function getBranch(branchId: number): Promise<Branch | null> {
   const branches = await getBranches();
   return branches.find((branch) => branch.id === branchId) ?? null;
+}
+
+/** ลำดับสาขา (เหมือนระบบเบิกสินค้า) — ใช้เรียงกลุ่มตามสาขา */
+export async function getBranchOrder(): Promise<Map<number, number>> {
+  return new Map((await loadAllBranches()).map((branch, index) => [branch.id, index]));
 }
 
 /** ชื่อสาขาทั้งหมด รวมที่เก็บถาวร — ใช้แสดงในประวัติบิล */
