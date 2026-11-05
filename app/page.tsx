@@ -22,7 +22,7 @@ const systems = [
     accent: 'from-rose-500 to-pink-400',
     href: '/stock-request',
     label: 'แจ้งสินค้าใกล้หมด',
-    // ช่วงทดสอบ: การ์ดสีเทา และต้องใส่รหัสผู้ดูแลก่อนเข้า (ดู lib/stock-request/testing.ts)
+    // เปิดใช้งานจริงแล้ว · ถ้าตั้งโหมดทดสอบ: การ์ดสีเทาและต้องใส่รหัสผู้ดูแลก่อนเข้า (ดู lib/stock-request/testing.ts)
     testing: STOCK_REQUEST_TESTING,
   },
 ];
