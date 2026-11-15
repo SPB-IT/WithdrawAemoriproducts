@@ -40,13 +40,13 @@ export default async function AdminChooserPage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           {systems.map((system) => (
-            <div key={system.href}>
-              <Link href={system.href} className="group block overflow-hidden rounded-3xl border border-white bg-white shadow-xl shadow-slate-200/60 transition hover:-translate-y-0.5 hover:shadow-2xl">
+            <div key={system.href} className="flex flex-col">
+              <Link href={system.href} className="group flex flex-1 flex-col overflow-hidden rounded-3xl border border-white bg-white shadow-xl shadow-slate-200/60 transition hover:-translate-y-0.5 hover:shadow-2xl">
                 <div className={`bg-gradient-to-r ${system.accent} px-6 py-5 text-white`}>
                   <span className="text-3xl">{system.icon}</span>
                   <h2 className="mt-2 text-lg font-black">{system.title}</h2>
                 </div>
-                <div className="flex items-center justify-between gap-3 px-6 py-4">
+                <div className="flex flex-1 items-center justify-between gap-3 px-6 py-4">
                   <p className="text-sm text-slate-600">{system.description}</p>
                   <span className="text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-slate-500">→</span>
                 </div>
