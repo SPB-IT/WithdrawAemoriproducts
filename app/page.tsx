@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { STOCK_REQUEST_TESTING } from '@/lib/stock-request/testing';
+import { DEFAULT_CLOSED_MESSAGE, getSystemStatuses, type SystemKey } from '@/lib/system-status';
 
 // หน้าแรกสำหรับพนักงานสาขาเท่านั้น — ผู้ดูแล/สำนักงานใหญ่เข้าผ่าน /admin โดยตรง
 const systems = [
@@ -27,7 +28,10 @@ const systems = [
   },
 ];
 
-export default function Home() {
+export const dynamic = 'force-dynamic';
+
+export default async function Home() {
+  const status = await getSystemStatuses();
   return (
     <main className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-rose-50/40 px-4 py-10 text-slate-800 sm:py-16">
       <div className="mx-auto max-w-4xl">
@@ -41,24 +45,26 @@ export default function Home() {
 
         <div className="grid gap-5 md:grid-cols-2">
           {systems.map((system) => {
-            const accent = system.testing ? 'from-slate-400 to-slate-500' : system.accent;
+            const closed = status[system.key as SystemKey].closed;
+            const accent = system.testing || closed ? 'from-slate-400 to-slate-500' : system.accent;
             return (
-              <section key={system.key} className={`flex flex-col overflow-hidden rounded-3xl border border-white bg-white shadow-xl shadow-slate-200/60 ${system.testing ? 'opacity-90 grayscale' : ''}`}>
+              <section key={system.key} className={`flex flex-col overflow-hidden rounded-3xl border border-white bg-white shadow-xl shadow-slate-200/60 ${system.testing || closed ? 'opacity-90 grayscale' : ''}`}>
                 <div className={`bg-gradient-to-r ${accent} px-6 py-6 text-white`}>
                   <div className="flex items-start justify-between gap-3">
                     <span className="text-4xl">{system.icon}</span>
-                    {system.testing && <span className="rounded-full bg-white/25 px-3 py-1 text-xs font-black">🧪 อยู่ระหว่างทดสอบ</span>}
+                    {closed ? <span className="rounded-full bg-white/25 px-3 py-1 text-xs font-black">🔒 ปิดชั่วคราว</span> : system.testing && <span className="rounded-full bg-white/25 px-3 py-1 text-xs font-black">🧪 อยู่ระหว่างทดสอบ</span>}
                   </div>
                   <h2 className="mt-3 text-xl font-black">{system.title}</h2>
                 </div>
                 <div className="flex flex-1 flex-col gap-5 p-6">
                   <p className="flex-1 text-sm leading-relaxed text-slate-600">{system.description}</p>
-                  {system.testing && <p className="-mt-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-500">🔒 ช่วงทดสอบ ต้องใส่รหัสผู้ดูแลก่อนเข้าใช้งาน</p>}
+                  {closed && <p className="-mt-2 whitespace-pre-line rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-500">🔒 {status[system.key as SystemKey].message?.trim() || DEFAULT_CLOSED_MESSAGE}</p>}
+                  {!closed && system.testing && <p className="-mt-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-500">🔒 ช่วงทดสอบ ต้องใส่รหัสผู้ดูแลก่อนเข้าใช้งาน</p>}
                   <Link
                     href={system.href}
                     className={`rounded-xl bg-gradient-to-r ${accent} px-4 py-3 text-center text-sm font-black text-white shadow-md transition hover:opacity-90`}
                   >
-                    {system.testing ? `🔒 ${system.label} (ผู้ดูแล)` : system.label}
+                    {closed ? `🔒 ${system.label}` : system.testing ? `🔒 ${system.label} (ผู้ดูแล)` : system.label}
                   </Link>
                 </div>
               </section>

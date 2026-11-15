@@ -1,8 +1,13 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { getSystemStatuses } from '@/lib/system-status';
+import SystemToggle from './SystemToggle';
+
+export const dynamic = 'force-dynamic';
 
 const systems = [
   {
+    key: 'requisition' as const,
     href: '/admin/dashboard',
     icon: '📝',
     title: 'ระบบเบิกสินค้า Aemori',
@@ -10,6 +15,7 @@ const systems = [
     accent: 'from-pink-500 to-rose-500',
   },
   {
+    key: 'stock-request' as const,
     href: '/admin/stock-request',
     icon: '📸',
     title: 'ระบบแจ้งสินค้าใกล้หมด',
@@ -19,7 +25,8 @@ const systems = [
 ];
 
 // หน้าเลือกระบบหลังเข้าสู่โหมดผู้ดูแล (/admin/access)
-export default function AdminChooserPage() {
+export default async function AdminChooserPage() {
+  const status = await getSystemStatuses();
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-pink-50 via-white to-rose-50/40 px-4 py-10 text-slate-800">
       <div className="w-full max-w-3xl">
@@ -33,16 +40,19 @@ export default function AdminChooserPage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           {systems.map((system) => (
-            <Link key={system.href} href={system.href} className="group overflow-hidden rounded-3xl border border-white bg-white shadow-xl shadow-slate-200/60 transition hover:-translate-y-0.5 hover:shadow-2xl">
-              <div className={`bg-gradient-to-r ${system.accent} px-6 py-5 text-white`}>
-                <span className="text-3xl">{system.icon}</span>
-                <h2 className="mt-2 text-lg font-black">{system.title}</h2>
-              </div>
-              <div className="flex items-center justify-between gap-3 px-6 py-4">
-                <p className="text-sm text-slate-600">{system.description}</p>
-                <span className="text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-slate-500">→</span>
-              </div>
-            </Link>
+            <div key={system.href}>
+              <Link href={system.href} className="group block overflow-hidden rounded-3xl border border-white bg-white shadow-xl shadow-slate-200/60 transition hover:-translate-y-0.5 hover:shadow-2xl">
+                <div className={`bg-gradient-to-r ${system.accent} px-6 py-5 text-white`}>
+                  <span className="text-3xl">{system.icon}</span>
+                  <h2 className="mt-2 text-lg font-black">{system.title}</h2>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-6 py-4">
+                  <p className="text-sm text-slate-600">{system.description}</p>
+                  <span className="text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-slate-500">→</span>
+                </div>
+              </Link>
+              <SystemToggle system={system.key} initialClosed={status[system.key].closed} initialMessage={status[system.key].message} />
+            </div>
           ))}
         </div>
 
