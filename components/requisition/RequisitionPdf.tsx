@@ -30,7 +30,33 @@ export interface RequisitionPdfLine {
   quantity: number;
   price_at_time: number;
   rejection_reason: string | null;
-  items: { name: string; unit: string } | null;
+  items: { name: string; unit: string; image_url?: string | null } | null;
+}
+
+// ย่อรูปเป็น JPEG ขนาดเล็กก่อนใส่ PDF (react-pdf ไม่รองรับ webp และรูปใหญ่ทำให้ไฟล์หนัก) — โหลดไม่ได้ = ไม่มีรูป ไม่ให้ทั้งใบพัง
+async function loadThumb(url: string | null | undefined): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const bitmap = await createImageBitmap(await res.blob());
+    const size = 96;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+    const scale = Math.max(size / bitmap.width, size / bitmap.height); // ครอปให้เต็มช่องสี่เหลี่ยม
+    const w = bitmap.width * scale;
+    const h = bitmap.height * scale;
+    ctx.drawImage(bitmap, (size - w) / 2, (size - h) / 2, w, h);
+    bitmap.close();
+    return canvas.toDataURL('image/jpeg', 0.8);
+  } catch {
+    return null;
+  }
 }
 
 const PINK = '#db2777';
@@ -47,6 +73,8 @@ const styles = StyleSheet.create({
   th: { flexDirection: 'row', backgroundColor: '#fce7f3', borderTop: '1px solid #f9a8d4', borderBottom: '1px solid #f9a8d4', paddingVertical: 4, color: '#be185d', fontWeight: 'bold' },
   row: { flexDirection: 'row', borderBottom: '0.5px solid #f9a8d4', paddingVertical: 4 },
   cNo: { width: 34, textAlign: 'center' },
+  cImg: { width: 38, alignItems: 'center', justifyContent: 'center' },
+  thumb: { width: 30, height: 30, borderRadius: 3, objectFit: 'cover' },
   cName: { flex: 1, paddingRight: 4 },
   cQty: { width: 50, textAlign: 'center' },
   cUnit: { width: 60, textAlign: 'center' },
@@ -62,7 +90,7 @@ const money = (value: number) => value.toLocaleString('th-TH', { minimumFraction
 const thaiDateTime = (value: string) =>
   new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value)) + ' น.';
 
-function RequisitionDocument({ req, lines }: { req: RequisitionPdfData; lines: RequisitionPdfLine[] }) {
+function RequisitionDocument({ req, lines, thumbs }: { req: RequisitionPdfData; lines: RequisitionPdfLine[]; thumbs: (string | null)[] }) {
   const total = lines.filter((line) => !line.rejection_reason).reduce((sum, line) => sum + (line.price_at_time || 0) * (line.quantity || 0), 0);
   return (
     <Document title={`ใบเบิกสินค้า - ${req.branch_name}`}>
@@ -94,6 +122,7 @@ function RequisitionDocument({ req, lines }: { req: RequisitionPdfData; lines: R
 
         <View style={styles.th} fixed>
           <Text style={styles.cNo}>ลำดับ</Text>
+          <Text style={styles.cImg}>รูป</Text>
           <Text style={styles.cName}>รายการสินค้า</Text>
           <Text style={styles.cQty}>จำนวน</Text>
           <Text style={styles.cUnit}>หน่วย</Text>
@@ -105,6 +134,7 @@ function RequisitionDocument({ req, lines }: { req: RequisitionPdfData; lines: R
           return (
             <View key={index} style={[styles.row, rejected ? { backgroundColor: '#fff5f5', color: '#94a3b8' } : {}]} wrap={false}>
               <Text style={styles.cNo}>{index + 1}</Text>
+              <View style={styles.cImg}>{thumbs[index] ? <Image src={thumbs[index] as string} style={[styles.thumb, rejected ? { opacity: 0.4 } : {}]} /> : null}</View>
               <Text style={[styles.cName, rejected ? { textDecoration: 'line-through' } : {}]}>{line.items?.name ?? '-'}</Text>
               <Text style={[styles.cQty, rejected ? { color: '#e11d48', fontWeight: 'bold' } : {}]}>{rejected ? 'ยกเลิก' : line.quantity}</Text>
               <Text style={styles.cUnit}>{line.items?.unit ?? '-'}</Text>
@@ -134,6 +164,7 @@ function RequisitionDocument({ req, lines }: { req: RequisitionPdfData; lines: R
 }
 
 export async function openRequisitionPdf(req: RequisitionPdfData, lines: RequisitionPdfLine[], target: Window | null) {
-  const blob = await pdf(<RequisitionDocument req={req} lines={lines} />).toBlob();
+  const thumbs = await Promise.all(lines.map((line) => loadThumb(line.items?.image_url)));
+  const blob = await pdf(<RequisitionDocument req={req} lines={lines} thumbs={thumbs} />).toBlob();
   openPdfBlob(blob, `ใบเบิก-${req.branch_name}.pdf`, target);
 }
