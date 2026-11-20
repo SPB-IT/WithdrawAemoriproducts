@@ -30,6 +30,7 @@ export interface RequisitionPdfLine {
   quantity: number;
   price_at_time: number;
   rejection_reason: string | null;
+  admin_note?: string | null;
   items: { name: string; unit: string; image_url?: string | null } | null;
 }
 
@@ -139,7 +140,7 @@ function RequisitionDocument({ req, lines, thumbs }: { req: RequisitionPdfData; 
               <Text style={[styles.cQty, rejected ? { color: '#e11d48', fontWeight: 'bold' } : {}]}>{rejected ? 'ยกเลิก' : line.quantity}</Text>
               <Text style={styles.cUnit}>{line.items?.unit ?? '-'}</Text>
               <Text style={styles.cPrice}>{rejected ? '—' : money(line.price_at_time || 0)}</Text>
-              <Text style={[styles.cNote, { color: '#e11d48', fontSize: 11 }]}>{rejected ? line.rejection_reason : ''}</Text>
+              <Text style={[styles.cNote, { color: rejected ? '#e11d48' : '#0369a1', fontSize: 11 }]}>{rejected ? line.rejection_reason : line.admin_note ?? ''}</Text>
             </View>
           );
         })}

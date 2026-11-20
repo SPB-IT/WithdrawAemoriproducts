@@ -27,6 +27,29 @@ interface RequisitionDetail {
     unit: string;
     image_url: string | null;
   } | null;
+  admin_note?: string | null;
+  // เฉพาะฝั่งหน้าเว็บ (ยังไม่บันทึกจนกว่าจะกดอนุมัติ)
+  isNew?: boolean;        // รายการที่ผู้ดูแลเพิ่ม/ทดแทนเข้ามา
+  replacesId?: string;    // รายการใหม่นี้ทดแทนรายการเดิม id นี้
+  replacedBy?: string;    // รายการเดิมนี้ถูกทดแทนด้วยรายการใหม่ id นี้
+}
+
+interface PickerItem {
+  id: string;
+  name: string;
+  unit: string;
+  price: number;
+  image_url: string | null;
+  stock_quantity: number | null;
+}
+
+const DETAIL_SELECT = 'id, item_id, quantity, price_at_time, rejection_reason, items (name, unit, image_url)';
+
+// ดึงรายการในใบเบิก (พร้อมหมายเหตุผู้ดูแล) — ถ้ายังไม่ได้รัน migration admin_note ให้ถอยไปอ่านแบบเดิม
+async function fetchDetailRows(requisitionId: string) {
+  const first = await supabase.from('requisition_details').select(`${DETAIL_SELECT}, admin_note`).eq('requisition_id', requisitionId);
+  if (!first.error) return first;
+  return supabase.from('requisition_details').select(DETAIL_SELECT).eq('requisition_id', requisitionId);
 }
 
 interface PreviewImage {
@@ -108,6 +131,11 @@ export default function AdminRequisitionsPage() {
   const [savingReject, setSavingReject]       = useState(false);
   const [savingApproval, setSavingApproval]   = useState(false);
 
+  // Add / substitute item picker
+  const [picker, setPicker]               = useState<{ mode: 'add' | 'substitute'; detail?: RequisitionDetail } | null>(null);
+  const [pickerItems, setPickerItems]     = useState<PickerItem[]>([]);
+  const [pickerSearch, setPickerSearch]   = useState('');
+  const [pickerLoading, setPickerLoading] = useState(false);
   // Image preview (lightbox)
   const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null);
 
@@ -256,10 +284,7 @@ export default function AdminRequisitionsPage() {
     setSelectedReq(req);
     setModalMode(mode);
     setLoadingDetails(true);
-    const { data, error } = await supabase
-      .from('requisition_details')
-      .select('id, item_id, quantity, price_at_time, rejection_reason, items (name, unit, image_url)')
-      .eq('requisition_id', req.id);
+    const { data, error } = await fetchDetailRows(req.id);
     if (data) setDetails(data as unknown as RequisitionDetail[]);
     if (error) console.error(error);
     setLoadingDetails(false);
@@ -289,9 +314,58 @@ export default function AdminRequisitionsPage() {
     );
   };
 
+  // ── เพิ่มสินค้า / ทดแทนสินค้า (เก็บในหน้าเว็บก่อน บันทึกตอนกดอนุมัติ) ──────────
+  const openPicker = async (mode: 'add' | 'substitute', detail?: RequisitionDetail) => {
+    setPicker({ mode, detail });
+    setPickerSearch('');
+    if (pickerItems.length > 0) return;
+    setPickerLoading(true);
+    const { data, error } = await supabase
+      .from('items')
+      .select('id, name, unit, price, image_url, stock_quantity')
+      .eq('is_active', true)
+      .order('name');
+    if (error) console.error(error);
+    setPickerItems((data ?? []) as PickerItem[]);
+    setPickerLoading(false);
+  };
+
+  const handlePickItem = (item: PickerItem) => {
+    if (!picker) return;
+    const lastNo = details.reduce((max, d) => (d.isNew ? Math.max(max, Number(d.id.slice(4)) || 0) : max), 0);
+    const newId = `new-${lastNo + 1}`;
+    const base: RequisitionDetail = {
+      id: newId,
+      item_id: item.id,
+      quantity: 1,
+      price_at_time: Number(item.price) || 0,
+      rejection_reason: null,
+      items: { name: item.name, unit: item.unit, image_url: item.image_url },
+      isNew: true,
+      admin_note: 'เพิ่มโดยผู้ดูแล',
+    };
+    if (picker.mode === 'substitute' && picker.detail) {
+      const original = picker.detail;
+      setDetails((prev) => [
+        ...prev.map((d) => (d.id === original.id ? { ...d, replacedBy: newId } : d)),
+        { ...base, quantity: original.quantity, replacesId: original.id, admin_note: `ทดแทน ${original.items?.name ?? 'สินค้า'}` },
+      ]);
+    } else {
+      setDetails((prev) => [...prev, base]);
+    }
+    setPicker(null);
+  };
+
+  // ลบรายการที่เพิ่ม/ทดแทนไว้ (ถ้าเป็นรายการทดแทน รายการเดิมจะกลับมาเป็นปกติ)
+  const handleRemoveNew = (newId: string) => {
+    setDetails((prev) =>
+      prev.filter((d) => d.id !== newId).map((d) => (d.replacedBy === newId ? { ...d, replacedBy: undefined } : d)),
+    );
+  };
+
   const handleApprove = async () => {
     if (!selectedReq) return;
-    const activeDetails = details.filter((detail) => !detail.rejection_reason);
+    const activeDetails = details.filter((detail) => !detail.rejection_reason && !detail.replacedBy);
     if (activeDetails.length === 0) {
       alert('ไม่สามารถอนุมัติได้ เนื่องจากไม่มีรายการสินค้าที่จะจัดส่ง');
       return;
@@ -302,7 +376,9 @@ export default function AdminRequisitionsPage() {
     // ผ่าน server: บันทึกจำนวน → คำนวณยอดจากราคาในฐานข้อมูล → ตัดสต็อกครั้งเดียว
     try {
       const result = await callApi<{ stockWarning: string | null }>(`/api/admin/requisitions/${selectedReq.id}/approve`, 'POST', {
-        quantities: Object.fromEntries(activeDetails.map((detail) => [detail.id, detail.quantity])),
+        quantities: Object.fromEntries(activeDetails.filter((detail) => !detail.isNew).map((detail) => [detail.id, detail.quantity])),
+        additions: details.filter((d) => d.isNew && !d.replacesId).map((d) => ({ item_id: d.item_id, quantity: d.quantity })),
+        substitutions: details.filter((d) => d.isNew && d.replacesId).map((d) => ({ detail_id: d.replacesId, item_id: d.item_id, quantity: d.quantity })),
       });
       if (result.stockWarning) alert(result.stockWarning);
       setSelectedReq(null);
@@ -588,10 +664,7 @@ export default function AdminRequisitionsPage() {
                               {req.status === 'approved' && (
                                 <button
                                   onClick={async () => {
-                                    const { data } = await supabase
-                                      .from('requisition_details')
-                                      .select('id, quantity, price_at_time, rejection_reason, items (name, unit, image_url)')
-                                      .eq('requisition_id', req.id);
+                                    const { data } = await fetchDetailRows(req.id);
                                     if (data) handlePrint(req, data as unknown as RequisitionDetail[]);
                                   }}
                                 className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-500 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow active:translate-y-0 active:scale-95"
@@ -734,6 +807,16 @@ export default function AdminRequisitionsPage() {
                     </div>
                   )}
 
+                  {modalMode === 'review' && (
+                    <button
+                      type="button"
+                      onClick={() => openPicker('add')}
+                      className="w-full rounded-xl border-2 border-dashed border-pink-200 bg-white py-2.5 text-sm font-black text-pink-500 transition-colors hover:bg-pink-50"
+                    >
+                      ➕ เพิ่มสินค้าเข้าบิลนี้
+                    </button>
+                  )}
+
                   <div className="overflow-x-auto rounded-2xl border border-pink-100">
                   <table className="w-full min-w-[680px] border-collapse text-left text-sm">
                     <thead>
@@ -749,7 +832,11 @@ export default function AdminRequisitionsPage() {
                     </thead>
                     <tbody className="divide-y divide-pink-50">
                       {details.map((d) => {
-                        const isRejected = !!d.rejection_reason;
+                        const isReplaced = !!d.replacedBy;
+                        const isRejected = !!d.rejection_reason || isReplaced;
+                        const rejectionText = isReplaced
+                          ? `ทดแทนด้วย ${details.find((x) => x.id === d.replacedBy)?.items?.name ?? 'สินค้าอื่น'}`
+                          : d.rejection_reason;
                         return (
                           <tr key={d.id} className={`transition-colors ${isRejected ? 'bg-rose-50/60' : 'hover:bg-pink-50/50'}`}>
                             <td className="px-4 py-3">
@@ -766,11 +853,16 @@ export default function AdminRequisitionsPage() {
                                   </p>
                                   {isRejected && (
                                     <div className="flex items-start gap-1 mt-1">
-                                      <span className="text-rose-400 text-xs mt-px">⛔</span>
+                                      <span className="text-rose-400 text-xs mt-px">{isReplaced ? '🔄' : '⛔'}</span>
                                       <p className="text-xs text-rose-500 font-semibold leading-tight">
-                                        {d.rejection_reason}
+                                        {rejectionText}
                                       </p>
                                     </div>
+                                  )}
+                                  {!isRejected && d.admin_note && (
+                                    <span className="mt-1 inline-block rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-600">
+                                      {d.isNew ? '🆕' : '🔄'} {d.admin_note}
+                                    </span>
                                   )}
                                 </div>
                               </div>
@@ -812,8 +904,24 @@ export default function AdminRequisitionsPage() {
                               {isRejected ? '—' : (d.price_at_time || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                             </td>
                             {modalMode === 'review' && (
-                              <td className="py-3 px-2 text-center">
-                                {isRejected ? (
+                              <td className="py-3 px-2 text-center whitespace-nowrap">
+                                {d.isNew ? (
+                                  <button
+                                    onClick={() => handleRemoveNew(d.id)}
+                                    title="เอารายการนี้ออก"
+                                    className="text-xs text-rose-400 hover:text-rose-600 font-bold transition-colors px-1.5 py-1 rounded-lg hover:bg-rose-50"
+                                  >
+                                    🗑️
+                                  </button>
+                                ) : isReplaced ? (
+                                  <button
+                                    onClick={() => handleRemoveNew(d.replacedBy as string)}
+                                    title="ยกเลิกการทดแทน"
+                                    className="text-xs text-slate-400 hover:text-emerald-500 font-bold transition-colors px-1.5 py-1 rounded-lg hover:bg-emerald-50"
+                                  >
+                                    ↩️
+                                  </button>
+                                ) : isRejected ? (
                                   <button
                                     onClick={() => handleClearItemRejection(d)}
                                     title="ยกเลิกการปฏิเสธรายการนี้"
@@ -822,13 +930,22 @@ export default function AdminRequisitionsPage() {
                                     ↩️
                                   </button>
                                 ) : (
-                                  <button
-                                    onClick={() => openRejectItemModal(d)}
-                                    title="ปฏิเสธรายการนี้"
-                                    className="text-xs text-rose-400 hover:text-rose-600 font-bold transition-colors px-1.5 py-1 rounded-lg hover:bg-rose-50"
-                                  >
-                                    ⛔
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => openPicker('substitute', d)}
+                                      title="ทดแทนด้วยสินค้าอื่น"
+                                      className="text-xs text-sky-500 hover:text-sky-700 font-bold transition-colors px-1.5 py-1 rounded-lg hover:bg-sky-50"
+                                    >
+                                      🔄
+                                    </button>
+                                    <button
+                                      onClick={() => openRejectItemModal(d)}
+                                      title="ปฏิเสธรายการนี้"
+                                      className="text-xs text-rose-400 hover:text-rose-600 font-bold transition-colors px-1.5 py-1 rounded-lg hover:bg-rose-50"
+                                    >
+                                      ⛔
+                                    </button>
+                                  </>
                                 )}
                               </td>
                             )}
@@ -841,7 +958,7 @@ export default function AdminRequisitionsPage() {
                         <td colSpan={modalMode === 'review' ? 3 : 3} className="py-3 px-2 text-right text-sm">รวมเป็นเงินทั้งสิ้น</td>
                         <td className="py-3 px-2 text-right text-pink-600 text-base">
                           {details
-                            .filter((d) => !d.rejection_reason)
+                            .filter((d) => !d.rejection_reason && !d.replacedBy)
                             .reduce((sum, d) => sum + (d.price_at_time || 0) * (d.quantity || 0), 0)
                             .toLocaleString('th-TH', { minimumFractionDigits: 2 })}{' '}
                           ฿
@@ -895,6 +1012,67 @@ export default function AdminRequisitionsPage() {
                   ปิดหน้าต่าง
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add / Substitute item picker ── */}
+      {picker && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm" onClick={() => setPicker(null)}>
+          <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-pink-100 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-linear-to-r from-pink-500 to-rose-500 p-5 text-white">
+              <h3 className="text-base font-black">{picker.mode === 'substitute' ? '🔄 ทดแทนสินค้า' : '➕ เพิ่มสินค้าเข้าบิล'}</h3>
+              {picker.mode === 'substitute' && <p className="mt-1 text-sm font-semibold text-pink-100">แทน: {picker.detail?.items?.name}</p>}
+            </div>
+            <div className="border-b border-pink-100 p-3">
+              <input
+                autoFocus
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                placeholder="ค้นหาชื่อสินค้า…"
+                className="w-full rounded-xl border border-pink-200 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-pink-300"
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {pickerLoading ? (
+                <p className="p-6 text-center text-sm font-bold text-slate-400">กำลังโหลดรายการสินค้า…</p>
+              ) : (
+                (() => {
+                  const q = pickerSearch.trim().toLowerCase();
+                  const shown = pickerItems.filter((i) => !q || i.name.toLowerCase().includes(q)).slice(0, 80);
+                  if (shown.length === 0) return <p className="p-6 text-center text-sm font-bold text-slate-400">ไม่พบสินค้า</p>;
+                  return shown.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handlePickItem(item)}
+                      className="flex w-full items-center gap-3 border-b border-pink-50 px-4 py-2.5 text-left transition-colors hover:bg-pink-50"
+                    >
+                      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-pink-100 bg-pink-50">
+                        {item.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={item.image_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="flex h-full items-center justify-center">📦</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-slate-700">{item.name}</p>
+                        <p className="text-xs font-semibold text-slate-400">
+                          {item.unit} · {(Number(item.price) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿ ·{' '}
+                          <span className={(item.stock_quantity ?? 0) <= 0 ? 'text-rose-500' : ''}>คงเหลือ {(item.stock_quantity ?? 0).toLocaleString('th-TH')}</span>
+                        </p>
+                      </div>
+                    </button>
+                  ));
+                })()
+              )}
+            </div>
+            <div className="border-t border-pink-100 p-3">
+              <button type="button" onClick={() => setPicker(null)} className="w-full rounded-xl border border-pink-100 bg-pink-50 py-2.5 text-sm font-bold text-pink-500 hover:bg-pink-100">
+                ยกเลิก
+              </button>
             </div>
           </div>
         </div>
